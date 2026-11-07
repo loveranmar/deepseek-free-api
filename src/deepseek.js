@@ -12,7 +12,7 @@ class DeepSeekError extends Error {
   }
 }
 
-let reconnectHint = () => `Reconnect in the dashboard: http://localhost:${config.get().port}`;
+let reconnectHint = () => 'Log in again with: deepseek login';
 function setReconnectHint(fn) { reconnectHint = fn; }
 
 function headers(extra = {}, token) {
@@ -37,11 +37,11 @@ function headers(extra = {}, token) {
 }
 
 async function api(pathname, body, signal, token, method = 'POST') {
-  if (!(token ?? config.get().token)) throw new DeepSeekError('No DeepSeek token configured. Open the dashboard and connect your account.', 401, 'auth_missing');
+  if (!(token ?? config.get().token)) throw new DeepSeekError('Not logged in. Run: deepseek login', 401, 'auth_missing');
   const r = await fetch(BASE + pathname, method === 'GET' ? { headers: headers({}, token), signal } : { method, headers: headers({}, token), body: JSON.stringify(body ?? {}), signal });
   const text = await r.text();
   let json = null; try { json = JSON.parse(text); } catch {}
-  if (r.status === 401 || r.status === 403) throw new DeepSeekError('DeepSeek rejected the token (expired or blocked). Re-connect your account in the dashboard.', 401, 'auth_expired');
+  if (r.status === 401 || r.status === 403) throw new DeepSeekError('DeepSeek rejected the token (expired or blocked). Log in again with: deepseek login', 401, 'auth_expired');
   if (r.status === 429) throw new DeepSeekError('DeepSeek rate limit reached. Wait a moment.', 429, 'rate_limit');
   if (!r.ok || !json) throw new DeepSeekError(`DeepSeek HTTP ${r.status}: ${text.slice(0, 160)}`, 502);
   if (json.code !== 0 && json.code !== undefined) {
@@ -168,7 +168,7 @@ async function* complete({ prompt, thinking = false, search = false, signal }) {
   }
 }
 
-// Cheap token check used by the dashboard.
+// Cheap token check.
 async function checkAuth(token) {
   const t = token ?? config.get().token;
   if (!t) return { ok: false, reason: 'No token configured' };

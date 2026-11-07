@@ -9,7 +9,7 @@ const FILE = path.join(DATA_DIR, 'config.json');
 const DEFAULT_WASM = 'https://fe-static.deepseek.com/chat/static/sha3_wasm_bg.7b9ca65ddd.wasm';
 
 const DEFAULTS = {
-  port: 8787,
+  port: 8788,
   host: '127.0.0.1',
   apiKey: '',          // key clients must send; generated on first run
   token: '',           // DeepSeek web userToken

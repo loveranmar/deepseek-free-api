@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// DeepSeek Bridge, terminal edition: the same local API as the dashboard version,
-// driven entirely from the command line (log in, launch Claude Code, chat, inspect traffic).
+// DeepSeek Free API: a local OpenAI + Anthropic API on your chat.deepseek.com login,
+// driven entirely from the terminal (log in, launch Claude Code, chat, inspect traffic).
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
@@ -98,7 +98,7 @@ function onRequest(e) {
 async function startServer({ quiet = true } = {}) {
   const want = Number(val('--port')) || Number(process.env.DSB_CLI_PORT) || 8788;
   for (let port = want; port < want + 20; port++) {
-    const srv = server.create({ dashboard: false, onLog: quiet ? onRequest : undefined });
+    const srv = server.create({ onLog: quiet ? onRequest : undefined });
     const ok = await new Promise((res) => { srv.once('error', () => res(false)); srv.listen(port, '127.0.0.1', () => res(true)); });
     if (ok) { state.port = port; return port; }
   }

@@ -1,21 +1,13 @@
 'use strict';
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 const ds = require('./deepseek');
 const { MODELS, fromAnthropic, estimateTokens, buildPrompt } = require('./convert');
 const { openaiChat, anthropicMessages } = require('./protocols');
-const ui = require('./ui');
 
-const PUBLIC = path.join(__dirname, '..', 'public');
 const stats = { started: Date.now(), requests: 0, errors: 0, tokensIn: 0, tokensOut: 0 };
-const log = []; // ring buffer for the dashboard
-let authCache = { at: 0, value: null };
-let logHook = (e) => ui.requestLine(e);
-
-const isLoopback = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+let logHook = () => {};
 
 function send(res, status, obj, extra = {}) {
   const body = typeof obj === 'string' ? obj : JSON.stringify(obj);
@@ -85,7 +77,6 @@ async function handleApi(req, res, url) {
     entry.status = e.status || 500;
     if (entry.status !== 404) stats.errors++;
     entry.error = e.message;
-    if (e.type === 'auth_expired' || e.type === 'auth_missing') authCache = { at: 0, value: null }; // dashboard shows it on next poll
     if (res.headersSent) { // mid-stream failure: signal in-band
       try {
         if (anth) res.write(`event: error\ndata: ${JSON.stringify(errorBody('anthropic', e))}\n\n`);
@@ -97,55 +88,11 @@ async function handleApi(req, res, url) {
     entry.ms = Date.now() - t0;
     entry.model = meta.model || entry.model;
     if (meta.usage) { entry.tokens = meta.usage.input + meta.usage.output; stats.tokensIn += meta.usage.input; stats.tokensOut += meta.usage.output; }
-    if (url.pathname !== '/v1/models') { log.unshift(entry); log.length = Math.min(log.length, 60); logHook(entry); }
+    if (url.pathname !== '/v1/models') logHook(entry);
   }
 }
 
-async function authStatus(force) {
-  if (!force && authCache.value && Date.now() - authCache.at < 20000) return authCache.value;
-  authCache = { at: Date.now(), value: await ds.checkAuth() };
-  return authCache.value;
-}
-
-async function handleAdmin(req, res, url) {
-  if (!isLoopback(req)) return send(res, 403, { error: 'Dashboard is only available from this machine.' });
-  const c = config.get();
-  if (req.method === 'GET' && url.pathname === '/admin/state') {
-    const auth = await authStatus(url.searchParams.get('fresh') === '1');
-    return send(res, 200, {
-      connected: auth.ok, reason: auth.reason || null,
-      tokenMasked: config.mask(c.token), hasCookie: !!c.cookie,
-      apiKey: c.apiKey, port: c.port, host: c.host, models: Object.keys(MODELS),
-      stats: { ...stats, uptime: Math.floor((Date.now() - stats.started) / 1000) }, log,
-    });
-  }
-  if (req.method === 'POST' && url.pathname === '/admin/config') {
-    const b = await readBody(req);
-    const patch = {};
-    if (b.token !== undefined) patch.token = config.normalizeToken(b.token);
-    if (b.cookie !== undefined) patch.cookie = String(b.cookie).trim();
-    if (b.apiKey !== undefined) patch.apiKey = String(b.apiKey).trim();
-    if (b.regenerateKey) patch.apiKey = 'sk-ds-' + crypto.randomBytes(18).toString('hex');
-    config.update(patch);
-    authCache = { at: 0, value: null };
-    return send(res, 200, { ok: true, auth: await authStatus(true) });
-  }
-  if (req.method === 'POST' && url.pathname === '/admin/disconnect') {
-    config.update({ token: '', cookie: '' }); authCache = { at: 0, value: null };
-    return send(res, 200, { ok: true });
-  }
-  send(res, 404, { error: 'not found' });
-}
-
-function serveStatic(res, file, type) {
-  fs.readFile(path.join(PUBLIC, file), (err, data) => {
-    if (err) return send(res, 404, 'Not found');
-    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
-    res.end(data);
-  });
-}
-
-function create({ dashboard = true, onLog } = {}) {
+function create({ onLog } = {}) {
   if (onLog) logHook = onLog;
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -156,14 +103,11 @@ function create({ dashboard = true, onLog } = {}) {
     try {
       if (url.pathname.startsWith('/v1/')) return await handleApi(req, res, url);
       if (url.pathname === '/health') return send(res, 200, { ok: true });
-      if (!dashboard) return send(res, 404, 'DeepSeek Bridge (terminal mode): API only, under /v1');
-      if (url.pathname.startsWith('/admin/')) return await handleAdmin(req, res, url);
-      if (url.pathname === '/' || url.pathname === '/index.html') return serveStatic(res, 'index.html', 'text/html; charset=utf-8');
-      send(res, 404, 'Not found');
+      send(res, 404, 'DeepSeek Free API: the API lives under /v1');
     } catch (e) {
       if (!res.headersSent) send(res, e.status || 500, { error: e.message });
     }
   });
 }
 
-module.exports = { create, authStatus, stats, log };
+module.exports = { create, stats };
