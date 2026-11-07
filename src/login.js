@@ -13,7 +13,8 @@ const config = require('./config');
 
 const SIGN_IN = process.env.DSB_SIGNIN_URL || 'https://chat.deepseek.com/sign_in';
 const ORIGIN = new URL(SIGN_IN).origin;
-const PROFILE = path.join(config.DATA_DIR, 'browser');
+// Own profile (separate from the user's everyday browser) so the DeepSeek session is remembered between logins.
+const PROFILE = path.join(config.DATA_DIR, 'chrome');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ---- browser discovery --------------------------------------------------------
@@ -28,20 +29,22 @@ function onPath(name) {
   return null;
 }
 
+// Google Chrome first. Brave is deliberately left out: its Shields break DeepSeek's captcha.
+// (DSB_BROWSER still lets you point at any Chromium-based browser.)
 function findBrowser() {
   if (process.env.DSB_BROWSER) return process.env.DSB_BROWSER;
   if (process.platform === 'darwin') {
-    const apps = ['Google Chrome', 'Brave Browser', 'Microsoft Edge', 'Chromium', 'Vivaldi'];
+    const apps = ['Google Chrome', 'Chromium', 'Microsoft Edge'];
     for (const a of apps) { const p = `/Applications/${a}.app/Contents/MacOS/${a}`; if (fs.existsSync(p)) return p; }
     return null;
   }
   if (process.platform === 'win32') {
     const roots = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean);
-    const rel = ['Google\\Chrome\\Application\\chrome.exe', 'BraveSoftware\\Brave-Browser\\Application\\brave.exe', 'Microsoft\\Edge\\Application\\msedge.exe'];
+    const rel = ['Google\\Chrome\\Application\\chrome.exe', 'Microsoft\\Edge\\Application\\msedge.exe'];
     for (const r of roots) for (const x of rel) { const p = path.join(r, x); if (fs.existsSync(p)) return p; }
     return null;
   }
-  for (const n of ['google-chrome-stable', 'google-chrome', 'brave', 'brave-browser', 'chromium', 'chromium-browser', 'microsoft-edge-stable', 'vivaldi-stable']) {
+  for (const n of ['google-chrome-stable', 'google-chrome', 'chromium', 'chromium-browser', 'microsoft-edge-stable']) {
     const p = onPath(n); if (p) return p;
   }
   return null;
@@ -133,7 +136,7 @@ const READ_ERROR = `(() => {${DOM}
  */
 async function login({ method = 'browser', email = '', password = '', onStatus = () => {}, signal, verify = async () => true, headless = false } = {}) {
   const exe = findBrowser();
-  if (!exe) throw new Error('No Chromium-based browser found (Chrome, Brave, Edge or Chromium). Set DSB_BROWSER to its path.');
+  if (!exe) throw new Error('Google Chrome was not found. Install Chrome (or set DSB_BROWSER to a Chromium-based browser).');
 
   fs.mkdirSync(PROFILE, { recursive: true });
   const portFile = path.join(PROFILE, 'DevToolsActivePort');
