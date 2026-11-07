@@ -85,7 +85,9 @@ class StreamState {
   feed(d) {
     if (!d || typeof d !== 'object') return;
     if (d.type === 'error' || d.type === 'hint') {
-      if (d.finish_reason === 'rate_limit_reached' || /too many|rate/i.test(d.content || '')) this.error = new DeepSeekError('DeepSeek rate limit reached.', 429, 'rate_limit');
+      if (d.finish_reason === 'rate_limit_reached' || /too many|rate limit/i.test(d.content || '')) this.error = new DeepSeekError('DeepSeek rate limit reached.', 429, 'rate_limit');
+      // e.g. {"type":"error","content":"Server is temporarily unavailable.","finish_reason":"generation_err"}
+      else if (d.type === 'error') this.error = Object.assign(new DeepSeekError(`DeepSeek: ${d.content || d.finish_reason || 'the reply failed'}`, 503, 'overloaded'), { retryable: true });
     }
     if (d.finish_reason) this.finish = d.finish_reason;
     if (d.p !== undefined) this.path = d.p;
@@ -144,8 +146,11 @@ async function* complete({ prompt, thinking = false, search = false, signal }) {
         yield out;
       }
     };
+    const rawLog = process.env.DSB_DEBUG_SSE ? require('path').join(config.DATA_DIR, 'last-sse.txt') : null;
+    if (rawLog) require('fs').writeFileSync(rawLog, '');
     const line = (l) => {
       l = l.replace(/\r$/, '');
+      if (rawLog) require('fs').appendFileSync(rawLog, l + '\n');
       if (!l.startsWith('data:')) return;
       const p = l.slice(5).trimStart();
       if (!p || p === '[DONE]') return;
@@ -161,7 +166,10 @@ async function* complete({ prompt, thinking = false, search = false, signal }) {
     buf += dec.decode(); if (buf) line(buf);
     if (st.error) throw st.error;
     yield* flush();
-    const finish = /^INCOMPLETE$/i.test(st.status || '') ? 'length' : 'stop';
+    // INCOMPLETE with no answer is a failed reply, not a long one: don't report it as a token limit.
+    const incomplete = /^INCOMPLETE$/i.test(st.status || '');
+    if (incomplete && !st.text.trim()) throw Object.assign(new DeepSeekError('DeepSeek stopped before answering. Try again.', 503, 'overloaded'), { retryable: true });
+    const finish = incomplete ? 'length' : 'stop';
     yield { done: true, finish };
   } finally {
     if (c.deleteChats) api('/api/v0/chat_session/delete', { chat_session_id: sessionId }).catch(() => {});

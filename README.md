@@ -56,9 +56,12 @@ client = OpenAI(base_url="http://localhost:8788/v1", api_key="<key>")
 
 Models: `deepseek-chat`, `deepseek-reasoner`, `deepseek-chat-search`, `deepseek-reasoner-search`. Any other model name falls back to `deepseek-chat`.
 
+In `deepseek claude`, the model you pick with `/model` is remembered for next time, and your normal Claude Code default is put back when you quit.
+
 ## Limits
 
 - Tool calling is emulated through the prompt, so it's only as reliable as the model's formatting.
+- Web search fails on long prompts (like Claude Code's). The reply is then retried without search, and search is skipped for long prompts for 15 minutes.
 - No image input. Token counts are estimates.
 - DeepSeek can revoke your token at any time. If that happens, log in again.
 

@@ -98,6 +98,9 @@ function buildPrompt({ system, messages, tools }) {
     return `[User]\n${m.text}`;
   });
   if (messages.length === 1 && messages[0].role === 'user' && !system && !tools.length) return messages[0].text;
+  // A last nudge right before the reply: on long agent prompts DeepSeek tends to announce
+  // what it will do ("I'll check the files.") and stop without the call.
+  if (tools.length) lines.push('[Reminder]\nIf you need a tool, put the tool call in this reply. Do not just say what you are about to do and stop.');
   parts.push(...lines, '[Assistant]');
   return 'Below is a conversation. Write only the next [Assistant] message.\n\n' + parts.join('\n\n');
 }

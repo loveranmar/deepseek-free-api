@@ -9,11 +9,25 @@ const path = require('path');
 
 const WASM = path.join(__dirname, '..', 'refs', 'deepseek2api', 'sha3_wasm_bg.7b9ca65ddd.wasm');
 const skip = !fs.existsSync(WASM) && 'wasm not present';
-let completionBody = null, deleted = 0, replyMode = 'plain';
+let completionBody = null, deleted = 0, replyMode = 'plain', replyQueue = [], bodies = [];
 
 const sseLines = (arr) => arr.map(o => `data: ${JSON.stringify(o)}\n\n`).join('');
 function reply() {
-  if (replyMode === 'tool') {
+  const mode = replyQueue.length ? replyQueue.shift() : replyMode;
+  if (mode === 'genErr') { // what DeepSeek sends when search mode chokes on a long prompt
+    return sseLines([
+      { v: { response: { message_id: 2, fragments: [{ type: 'THINK', content: 'The user' }] } } },
+      { p: 'response/status', o: 'SET', v: 'INCOMPLETE' },
+      { type: 'error', content: 'Server is temporarily unavailable.', clear_response: false, finish_reason: 'generation_err' },
+    ]);
+  }
+  if (mode === 'incomplete') {
+    return sseLines([
+      { v: { response: { message_id: 2, fragments: [{ type: 'THINK', content: 'Hm' }] } } },
+      { p: 'response/status', o: 'SET', v: 'INCOMPLETE' },
+    ]);
+  }
+  if (mode === 'tool') {
     return sseLines([
       { v: { response: { message_id: 2, fragments: [{ type: 'RESPONSE', content: 'Checking. ' }] } } },
       { p: 'response/fragments/-1/content', o: 'APPEND', v: '<tool_call>{"name":"get_weather",' },
@@ -43,7 +57,7 @@ test.before(async () => {
       if (req.url === '/api/v0/chat_session/create') return ok({ chat_session: { id: 'sess-1' } });
       if (req.url === '/api/v0/chat_session/delete') { deleted++; return ok({}); }
       if (req.url === '/api/v0/chat/completion') {
-        completionBody = JSON.parse(body);
+        completionBody = JSON.parse(body); bodies.push(completionBody);
         assert.ok(req.headers['x-ds-pow-response'], 'pow header sent');
         res.setHeader('content-type', 'text/event-stream'); return res.end(reply());
       }
@@ -107,6 +121,33 @@ test('tool call emulation (openai + anthropic)', { skip }, async () => {
   const a = await (await post('/v1/messages', { model: 'x', max_tokens: 50, messages: [{ role: 'user', content: 'w?' }], tools: [{ name: 'get_weather', description: 'w', input_schema: { type: 'object' } }] }, { 'x-api-key': key })).json();
   assert.equal(a.stop_reason, 'tool_use');
   assert.deepEqual(a.content.find(b => b.type === 'tool_use').input, { city: 'Paris' });
+});
+
+test('failed search reply retries once without search, then skips search for long prompts', { skip }, async () => {
+  replyMode = 'plain'; replyQueue = ['genErr']; bodies = [];
+  const req = { model: 'deepseek-reasoner-search', max_tokens: 50, stream: true, messages: [{ role: 'user', content: 'list files' }], tools: [{ name: 'Bash', description: 'run', input_schema: { type: 'object' } }] };
+  const txt = await (await post('/v1/messages', req, { 'x-api-key': key })).text();
+  assert.deepEqual(bodies.map(b => b.search_enabled), [true, false]);
+  assert.match(txt, /"text_delta","text":"Hello there"/);
+  assert.match(txt, /"stop_reason":"end_turn"/);
+  assert.doesNotMatch(txt, /max_tokens|event: error/);
+  bodies = [];
+  await (await post('/v1/messages', req, { 'x-api-key': key })).text();
+  assert.deepEqual(bodies.map(b => b.search_enabled), [false], 'search skipped while it is known to fail');
+  require('../src/engine')._searchFail.at = 0;
+});
+
+test('a reply DeepSeek abandons is an error, not max_tokens', { skip }, async () => {
+  replyQueue = ['incomplete', 'incomplete']; bodies = [];
+  const r = await post('/v1/messages', { model: 'deepseek-chat', max_tokens: 50, messages: [{ role: 'user', content: 'hi' }] }, { 'x-api-key': key });
+  assert.equal(r.status, 503);
+  assert.match((await r.json()).error.message, /stopped before answering/);
+  assert.equal(bodies.length, 2, 'retried once');
+  replyQueue = ['genErr', 'genErr'];
+  const txt = await (await post('/v1/messages', { model: 'deepseek-chat', max_tokens: 50, stream: true, messages: [{ role: 'user', content: 'hi' }] }, { 'x-api-key': key })).text();
+  assert.match(txt, /event: error\ndata: .*Server is temporarily unavailable/);
+  assert.doesNotMatch(txt, /max_tokens/);
+  replyQueue = []; replyMode = 'plain';
 });
 
 test('bad client key rejected; expired upstream token maps to 401', { skip }, async () => {

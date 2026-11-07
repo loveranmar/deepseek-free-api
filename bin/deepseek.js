@@ -3,6 +3,7 @@
 // DeepSeek Free API: a local OpenAI + Anthropic API on your chat.deepseek.com login,
 // driven entirely from the terminal (log in, launch Claude Code, chat, inspect traffic).
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const config = require('../src/config');
@@ -71,12 +72,13 @@ function copyText(text) {
 }
 
 function claudeEnv() {
+  // No ANTHROPIC_MODEL: it would override every /model pick. The model goes in as --model instead.
+  const { ANTHROPIC_MODEL, ...env } = process.env;
   return {
-    ...process.env,
+    ...env,
     FORCE_COLOR: '1',
     ANTHROPIC_BASE_URL: base(),
     ANTHROPIC_AUTH_TOKEN: cfg.apiKey,
-    ANTHROPIC_MODEL: 'deepseek-chat',
     ANTHROPIC_DEFAULT_MODEL: 'deepseek-chat',
     ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-chat',
     ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-reasoner',
@@ -448,17 +450,40 @@ async function logout() {
 }
 
 // ---- Claude Code --------------------------------------------------------------------
+// /model in Claude Code always saves to the user's global settings.json, which the user's normal
+// (Anthropic) sessions read too. So: remember the DeepSeek pick here, and put their model back on exit.
+const CLAUDE_SETTINGS = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
+const isDeepSeekModel = (m) => typeof m === 'string' && /^deepseek-/i.test(m);
+function readClaudeSettings() {
+  try { return JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8')); } catch { return null; }
+}
+function restoreClaudeModel(before) {
+  const s = readClaudeSettings();
+  if (!s || !isDeepSeekModel(s.model)) return; // untouched, or changed to a non-DeepSeek model elsewhere
+  if (MODELS[s.model]) config.update({ claudeModel: s.model });
+  if (before === undefined) delete s.model; else s.model = before;
+  const tmp = CLAUDE_SETTINGS + '.deepseek-tmp';
+  try { fs.writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n'); fs.renameSync(tmp, CLAUDE_SETTINGS); } catch {}
+}
+
 async function launchClaude(extra = []) {
   if (!(await needLogin())) return 1;
   t.screen(null); t.clear();
+  const settings = readClaudeSettings();
+  // A DeepSeek model already sitting in there was left by a session that didn't exit cleanly.
+  const before = settings && !isDeepSeekModel(settings.model) ? settings.model : undefined;
+  const model = MODELS[cfg.claudeModel] ? cfg.claudeModel : 'deepseek-chat';
+  const hasModel = extra.some(a => a === '--model' || a.startsWith('--model='));
   childRunning = true;
   const code = await new Promise((resolve) => {
-    const child = spawn('claude', ['--allow-dangerously-skip-permissions', '--settings', path.join(ROOT, 'assets', 'claude-settings.json'), ...extra],
+    const child = spawn('claude', ['--allow-dangerously-skip-permissions', '--settings', path.join(ROOT, 'assets', 'claude-settings.json'),
+      ...(hasModel ? [] : ['--model', model]), ...extra],
       { stdio: 'inherit', env: claudeEnv(), shell: process.platform === 'win32' });
     child.on('error', (e) => resolve(e.code === 'ENOENT' ? 'missing' : 1));
     child.on('exit', (c) => resolve(c ?? 0));
   });
   childRunning = false;
+  restoreClaudeModel(before);
   if (code === 'missing') {
     t.screen(() => frame([t.TAG.bad() + ' ' + p.text('claude code is not installed'), p.dim('https://claude.com/claude-code')], { after: 2 }));
     await t.anyKey('any key');
@@ -598,7 +623,7 @@ async function details() {
     if (v === 'show') { state.showKey = !state.showKey; continue; }
     if (v === 'regen') { config.update({ apiKey: 'sk-ds-' + require('crypto').randomBytes(18).toString('hex') }); note = t.TAG.ok() + ' ' + p.text('new key made, the old one is dead'); continue; }
     copyText(v === 'key' ? cfg.apiKey
-      : `export ANTHROPIC_BASE_URL=${base()}\nexport ANTHROPIC_AUTH_TOKEN=${cfg.apiKey}\nexport ANTHROPIC_MODEL=deepseek-chat\n`);
+      : `export ANTHROPIC_BASE_URL=${base()}\nexport ANTHROPIC_AUTH_TOKEN=${cfg.apiKey}\nexport ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-reasoner\nexport ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-chat\nexport ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-chat\n`);
     note = t.TAG.ok() + ' ' + p.text('copied');
   }
 }

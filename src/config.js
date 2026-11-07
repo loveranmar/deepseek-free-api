@@ -21,6 +21,7 @@ const DEFAULTS = {
   modelType: 'default',
   deleteChats: true,   // delete the web chat after each request
   email: '',           // last account used by the terminal login (never the password)
+  claudeModel: 'deepseek-chat', // last model picked with /model in `deepseek claude`
 };
 
 let state = null;

@@ -9,6 +9,7 @@ test('openai -> normalized -> prompt with tools', () => {
     { role: 'tool', tool_call_id: 'c1', content: '20C' }],
     tools: [{ type: 'function', function: { name: 'get_weather', description: 'w', parameters: { type: 'object' } } }] });
   const p = c.buildPrompt(n);
+  assert.match(p, /\[Reminder\]\nIf you need a tool, put the tool call in this reply/);
   assert.match(p, /\[Tools\]/); assert.match(p, /<tool_call>\{"name":"get_weather"/); assert.match(p, /\[Tool result c1\]\n20C/); assert.ok(p.endsWith('[Assistant]'));
 });
 
