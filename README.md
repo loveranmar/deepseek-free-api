@@ -15,6 +15,22 @@ The dashboard opens at <http://localhost:8787>. Follow the 3 steps to paste your
 
 Options: `--port`, `--host 0.0.0.0` (LAN), `--token`, `--no-open`, `--no-banner`. Env: `PORT`, `HOST`, `DEEPSEEK_TOKEN`.
 
+## Terminal edition
+
+`deepseek` (`bin/deepseek.js`) is the same bridge without the dashboard: an interactive terminal app.
+
+```
+deepseek                 open the app (menu: Claude Code, chat, log in, details, request log)
+deepseek claude [args]   launch Claude Code on DeepSeek
+deepseek chat            chat in the terminal
+deepseek login           log in (--google, or --token <t>)
+deepseek status | logout | serve
+```
+
+Logging in needs no copying. Pick **Email and password** and type them in the terminal: a browser window opens DeepSeek's real sign-in page, fills the form, picks up the session and closes. Pick **Continue with Google** to sign in with Google in that window. The window uses its own browser profile in `data/browser/`, so later logins are usually instant. Only the session token is saved (in `data/config.json`), never the password. It needs a Chromium-based browser (Chrome, Brave, Edge or Chromium; set `DSB_BROWSER` to pick one).
+
+The terminal app serves the API on port 8788 by default (the next free port if that's taken), so it can run next to the dashboard version.
+
 ## Clients
 
 ```powershell

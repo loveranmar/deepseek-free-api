@@ -1,12 +1,17 @@
 {
   "name": "deepseek-bridge",
   "version": "1.0.0",
-  "description": "Turn your chat.deepseek.com session into a local OpenAI + Anthropic compatible API, with a dashboard.",
-  "bin": { "deepseek-bridge": "./bin/deepseek-bridge.js" },
+  "description": "Turn your chat.deepseek.com session into a local OpenAI + Anthropic compatible API, as a terminal app or with a web dashboard.",
+  "bin": {
+    "deepseek": "./bin/deepseek.js",
+    "deepseek-bridge": "./bin/deepseek-bridge.js"
+  },
   "scripts": {
     "start": "node bin/deepseek-bridge.js",
     "test": "node --test test/unit.test.js test/repair.test.js test/stream.test.js"
   },
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "license": "MIT"
 }

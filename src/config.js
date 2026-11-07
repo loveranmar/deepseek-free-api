@@ -20,6 +20,7 @@ const DEFAULTS = {
   clientVersion: '2.0.0',
   modelType: 'default',
   deleteChats: true,   // delete the web chat after each request
+  email: '',           // last account used by the terminal login (never the password)
 };
 
 let state = null;

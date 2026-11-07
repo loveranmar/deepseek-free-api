@@ -13,6 +13,7 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 const stats = { started: Date.now(), requests: 0, errors: 0, tokensIn: 0, tokensOut: 0 };
 const log = []; // ring buffer for the dashboard
 let authCache = { at: 0, value: null };
+let logHook = (e) => ui.requestLine(e);
 
 const isLoopback = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
@@ -96,7 +97,7 @@ async function handleApi(req, res, url) {
     entry.ms = Date.now() - t0;
     entry.model = meta.model || entry.model;
     if (meta.usage) { entry.tokens = meta.usage.input + meta.usage.output; stats.tokensIn += meta.usage.input; stats.tokensOut += meta.usage.output; }
-    if (url.pathname !== '/v1/models') { log.unshift(entry); log.length = Math.min(log.length, 60); ui.requestLine(entry); }
+    if (url.pathname !== '/v1/models') { log.unshift(entry); log.length = Math.min(log.length, 60); logHook(entry); }
   }
 }
 
@@ -144,7 +145,8 @@ function serveStatic(res, file, type) {
   });
 }
 
-function create() {
+function create({ dashboard = true, onLog } = {}) {
+  if (onLog) logHook = onLog;
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -153,8 +155,9 @@ function create() {
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     try {
       if (url.pathname.startsWith('/v1/')) return await handleApi(req, res, url);
-      if (url.pathname.startsWith('/admin/')) return await handleAdmin(req, res, url);
       if (url.pathname === '/health') return send(res, 200, { ok: true });
+      if (!dashboard) return send(res, 404, 'DeepSeek Bridge (terminal mode): API only, under /v1');
+      if (url.pathname.startsWith('/admin/')) return await handleAdmin(req, res, url);
       if (url.pathname === '/' || url.pathname === '/index.html') return serveStatic(res, 'index.html', 'text/html; charset=utf-8');
       send(res, 404, 'Not found');
     } catch (e) {
@@ -163,4 +166,4 @@ function create() {
   });
 }
 
-module.exports = { create, authStatus };
+module.exports = { create, authStatus, stats, log };

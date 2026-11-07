@@ -12,7 +12,10 @@ class DeepSeekError extends Error {
   }
 }
 
-function headers(extra = {}) {
+let reconnectHint = () => `Reconnect in the dashboard: http://localhost:${config.get().port}`;
+function setReconnectHint(fn) { reconnectHint = fn; }
+
+function headers(extra = {}, token) {
   const c = config.get();
   const h = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
@@ -21,7 +24,7 @@ function headers(extra = {}) {
     'x-app-version': c.clientVersion,
     'x-client-locale': 'en_US',
     'x-client-timezone-offset': String(-new Date().getTimezoneOffset() * 60),
-    Authorization: `Bearer ${c.token}`,
+    Authorization: `Bearer ${token ?? c.token}`,
     Origin: BASE,
     Referer: BASE + '/',
     'Content-Type': 'application/json',
@@ -33,9 +36,9 @@ function headers(extra = {}) {
   return h;
 }
 
-async function api(pathname, body, signal) {
-  if (!config.get().token) throw new DeepSeekError('No DeepSeek token configured. Open the dashboard and connect your account.', 401, 'auth_missing');
-  const r = await fetch(BASE + pathname, { method: 'POST', headers: headers(), body: JSON.stringify(body ?? {}), signal });
+async function api(pathname, body, signal, token, method = 'POST') {
+  if (!(token ?? config.get().token)) throw new DeepSeekError('No DeepSeek token configured. Open the dashboard and connect your account.', 401, 'auth_missing');
+  const r = await fetch(BASE + pathname, method === 'GET' ? { headers: headers({}, token), signal } : { method, headers: headers({}, token), body: JSON.stringify(body ?? {}), signal });
   const text = await r.text();
   let json = null; try { json = JSON.parse(text); } catch {}
   if (r.status === 401 || r.status === 403) throw new DeepSeekError('DeepSeek rejected the token (expired or blocked). Re-connect your account in the dashboard.', 401, 'auth_expired');
@@ -44,7 +47,7 @@ async function api(pathname, body, signal) {
   if (json.code !== 0 && json.code !== undefined) {
     const msg = json.msg || 'unknown error';
     if (json.code === 40003 || /invalid.?token|authorization failed/i.test(msg)) {
-      throw new DeepSeekError(`DeepSeek rejected the token (logged out, expired, or revoked by DeepSeek). Reconnect in the dashboard: http://localhost:${config.get().port}`, 401, 'auth_expired');
+      throw new DeepSeekError(`DeepSeek rejected the token (logged out, expired, or revoked by DeepSeek). ${reconnectHint()}`, 401, 'auth_expired');
     }
     const auth = /token|login|auth/i.test(msg);
     throw new DeepSeekError(`DeepSeek: ${msg}`, auth ? 401 : 502, auth ? 'auth_expired' : 'upstream_error');
@@ -166,13 +169,22 @@ async function* complete({ prompt, thinking = false, search = false, signal }) {
 }
 
 // Cheap token check used by the dashboard.
-async function checkAuth() {
-  const c = config.get();
-  if (!c.token) return { ok: false, reason: 'No token configured' };
+async function checkAuth(token) {
+  const t = token ?? config.get().token;
+  if (!t) return { ok: false, reason: 'No token configured' };
   try {
-    await api('/api/v0/chat/create_pow_challenge', { target_path: COMPLETION });
+    await api('/api/v0/chat/create_pow_challenge', { target_path: COMPLETION }, undefined, t);
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
-module.exports = { complete, checkAuth, DeepSeekError };
+// Who the token belongs to (email or phone), best effort.
+async function account(token) {
+  try {
+    const j = await api('/api/v0/users/current', null, AbortSignal.timeout(8000), token, 'GET');
+    const u = (j.data && (j.data.biz_data || j.data.user)) || {};
+    return { email: u.email || u.mobile_number || u.mobile || '', muted: !!(u.chat && u.chat.is_muted) };
+  } catch { return null; }
+}
+
+module.exports = { complete, checkAuth, account, setReconnectHint, DeepSeekError };
