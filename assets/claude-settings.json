@@ -1,0 +1,11 @@
+{
+  "modelPicker": {
+    "replaceBuiltInOptions": true,
+    "options": [
+      { "model": "deepseek-chat", "label": "DeepSeek Chat", "description": "Fast, everyday coding and chat" },
+      { "model": "deepseek-reasoner", "label": "DeepSeek Reasoner", "description": "Thinks step by step before answering (DeepThink)" },
+      { "model": "deepseek-chat-search", "label": "DeepSeek Chat + Search", "description": "Fast, with web search" },
+      { "model": "deepseek-reasoner-search", "label": "DeepSeek Reasoner + Search", "description": "DeepThink with web search" }
+    ]
+  }
+}

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek Bridge</title>
+<style>
+:root{
+  --bg:#0b0d17; --bg2:#10132a; --card:rgba(255,255,255,.045); --line:rgba(255,255,255,.09);
+  --text:#e8eaf6; --mute:#8d93b5; --blue:#5b7cff; --pink:#c860e0; --ok:#3ddc97; --bad:#ff6b81; --warn:#ffc857;
+  --code:#0a0c1a; --grad:linear-gradient(120deg,#5b7cff,#c860e0);
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --bg:#f4f5fb; --bg2:#e9ebf7; --card:#ffffff; --line:rgba(20,25,70,.12); --text:#171a33; --mute:#5d6384;
+  --blue:#3556e8; --pink:#a935c8; --ok:#0f9d68; --bad:#d6334d; --warn:#b07600; --code:#eef0fa;}}
+:root[data-theme="light"]{--bg:#f4f5fb;--bg2:#e9ebf7;--card:#fff;--line:rgba(20,25,70,.12);--text:#171a33;--mute:#5d6384;--blue:#3556e8;--pink:#a935c8;--ok:#0f9d68;--bad:#d6334d;--warn:#b07600;--code:#eef0fa}
+*{box-sizing:border-box}
+html{color-scheme:dark light}
+body{margin:0;font:15px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;color:var(--text);
+  background:radial-gradient(1200px 600px at 10% -10%,color-mix(in srgb,var(--blue) 22%,transparent),transparent 60%),
+             radial-gradient(900px 500px at 100% 0%,color-mix(in srgb,var(--pink) 18%,transparent),transparent 60%),var(--bg);
+  min-height:100vh}
+.wrap{max-width:1040px;margin:0 auto;padding:28px 16px 64px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:26px}
+.logo{width:42px;height:42px;border-radius:12px;background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:800;font-size:20px;box-shadow:0 8px 28px color-mix(in srgb,var(--blue) 40%,transparent)}
+h1{margin:0;font-size:22px;letter-spacing:-.02em}
+h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--mute);font-size:13px}
+.sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:99px;border:1px solid var(--line);background:var(--card);font-size:13px;font-weight:600}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.pill.ok .dot{background:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 25%,transparent)}
+.pill.bad .dot{background:var(--bad);box-shadow:0 0 0 4px color-mix(in srgb,var(--bad) 25%,transparent)}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;backdrop-filter:blur(10px)}
+.c12{grid-column:span 12}.c7{grid-column:span 7}.c5{grid-column:span 5}.c4{grid-column:span 4}
+@media(max-width:820px){.c7,.c5,.c4{grid-column:span 12}}
+h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--mute);font-weight:700}
+.steps{counter-reset:s;margin:0 0 14px;padding:0;list-style:none;display:grid;gap:10px}
+.steps li{counter-increment:s;display:flex;gap:12px;align-items:flex-start}
+.steps li::before{content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;background:var(--grad);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+code,.mono{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12.5px}
+code{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.snip{display:flex;align-items:center;gap:8px;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;overflow:hidden}
+.snip code{background:none;border:0;padding:0;flex:1;white-space:nowrap;overflow:auto}
+textarea,input[type=text],input[type=password],select{width:100%;background:var(--code);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-family:ui-monospace,Consolas,monospace;font-size:13px;outline:none}
+textarea:focus,input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 25%,transparent)}
+textarea{resize:vertical;min-height:70px}
+button{font:inherit;font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;padding:8px 14px;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--blue)}
+button.primary{background:var(--grad);border:0;color:#fff}
+button.primary:hover{filter:brightness(1.1)}
+button.sm{padding:4px 10px;font-size:12px}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center;margin:8px 0}
+.kv>span{color:var(--mute);font-size:13px}
+.stat{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:560px){.stat{grid-template-columns:repeat(2,1fr)}}
+.stat div{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat b{display:block;font-size:20px;letter-spacing:-.02em}
+.stat small{color:var(--mute);font-size:12px}
+.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.tabs button.on{background:var(--grad);border:0;color:#fff}
+pre{margin:0;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font-size:12.5px;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--mute);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.s200{color:var(--ok)}.sbad{color:var(--bad)}
+.tablewrap{overflow-x:auto}
+.chat{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:120px;max-height:340px;overflow:auto;white-space:pre-wrap;font-size:14px}
+.think{color:var(--mute);font-style:italic;border-left:2px solid var(--pink);padding-left:10px;margin-bottom:8px}
+.hint{color:var(--mute);font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:99px;font-size:13px;font-weight:600;transition:.25s;opacity:0}
+.toast.show{transform:translateX(-50%);opacity:1}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">D</div>
+    <div><h1>DeepSeek <span>Bridge</span></h1><div class="sub">chat.deepseek.com → local OpenAI &amp; Anthropic API</div></div>
+    <div class="sp"></div>
+    <div id="pill" class="pill"><i class="dot"></i><span id="pillText">Checking…</span></div>
+  </header>
+
+  <div class="grid">
+    <section class="card c12 hide" id="connectCard">
+      <h2>Connect your DeepSeek account</h2>
+      <ol class="steps">
+        <li><div>Open <a href="https://chat.deepseek.com" target="_blank" rel="noopener" style="color:var(--blue)">chat.deepseek.com</a> and log in.</div></li>
+        <li><div>Press <code>F12</code> → <b>Console</b>, paste this line and press Enter (it copies your token):
+          <div class="snip"><code id="snipTok">copy(JSON.parse(localStorage.userToken).value)</code><button class="sm" data-copy="#snipTok">Copy</button></div></div></li>
+        <li><div>Paste the token here and connect:</div></li>
+      </ol>
+      <input id="tokenIn" type="password" placeholder="Paste token…" autocomplete="off" spellcheck="false">
+      <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">Optional: cookie (only if requests get blocked)</summary>
+        <textarea id="cookieIn" placeholder="ds_session_id=…; smidV2=…" spellcheck="false" style="margin-top:8px"></textarea></details>
+      <div class="row" style="margin-top:12px"><button class="primary" id="connectBtn">Connect</button><span class="hint" id="connectMsg"></span></div>
+    </section>
+
+    <section class="card c7">
+      <h2>Use it</h2>
+      <div class="kv"><span>API key</span><div class="row" style="flex-wrap:nowrap"><input id="keyOut" type="password" readonly><button class="sm" id="showKey">Show</button><button class="sm" data-copy="#keyOut">Copy</button></div></div>
+      <div class="kv"><span>OpenAI URL</span><div class="snip" style="margin:0"><code id="oaUrl"></code><button class="sm" data-copy="#oaUrl">Copy</button></div></div>
+      <div class="kv"><span>Anthropic URL</span><div class="snip" style="margin:0"><code id="anUrl"></code><button class="sm" data-copy="#anUrl">Copy</button></div></div>
+      <div class="tabs" id="tabs"></div>
+      <pre id="example"></pre>
+    </section>
+
+    <section class="card c5">
+      <h2>Activity</h2>
+      <div class="stat">
+        <div><b id="sReq">0</b><small>requests</small></div>
+        <div><b id="sErr">0</b><small>errors</small></div>
+        <div><b id="sTok">0</b><small>≈ tokens</small></div>
+        <div><b id="sUp">0m</b><small>uptime</small></div>
+      </div>
+      <h2 style="margin-top:18px">Account</h2>
+      <div class="row"><span class="mono" id="acctTok">—</span><div class="sp"></div>
+        <button class="sm" id="recheck">Re-check</button><button class="sm" id="regen">New key</button><button class="sm" id="disc">Disconnect</button></div>
+    </section>
+
+    <section class="card c12">
+      <h2>Playground</h2>
+      <div class="row" style="margin-bottom:10px"><select id="modelSel" style="max-width:260px"></select>
+        <span class="hint">deepseek-reasoner shows the thinking process · -search adds web search</span></div>
+      <div class="chat" id="chat"><span class="hint">Say something to test the connection…</span></div>
+      <div class="row" style="margin-top:10px;flex-wrap:nowrap"><input id="prompt" type="text" placeholder="Type a message and press Enter"><button class="primary" id="send">Send</button></div>
+    </section>
+
+    <section class="card c12">
+      <h2>Recent requests</h2>
+      <div class="tablewrap"><table><thead><tr><th>Time</th><th>Status</th><th>Endpoint</th><th>Model</th><th>Tokens</th><th>Time</th><th>Error</th></tr></thead><tbody id="logBody"></tbody></table></div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let state = null, tab = 'claude';
+const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); };
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copied'); }catch{ toast('Copy failed'); } }
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  const el = $(b.dataset.copy); copyText(el.value ?? el.textContent);
+});
+
+const examples = (base, key) => ({
+  claude: `# Claude Code (PowerShell)\n$env:ANTHROPIC_BASE_URL="${base}"\n$env:ANTHROPIC_AUTH_TOKEN="${key}"\n$env:ANTHROPIC_MODEL="deepseek-chat"\nclaude\n\n# macOS / Linux\nexport ANTHROPIC_BASE_URL=${base}\nexport ANTHROPIC_AUTH_TOKEN=${key}\nexport ANTHROPIC_MODEL=deepseek-chat`,
+  openai: `from openai import OpenAI\nclient = OpenAI(base_url="${base}/v1", api_key="${key}")\nr = client.chat.completions.create(\n    model="deepseek-chat",\n    messages=[{"role": "user", "content": "Hello!"}],\n)\nprint(r.choices[0].message.content)`,
+  anthropic: `import anthropic\nclient = anthropic.Anthropic(base_url="${base}", api_key="${key}")\nm = client.messages.create(model="deepseek-chat", max_tokens=1024,\n    messages=[{"role": "user", "content": "Hello!"}])\nprint(m.content[0].text)`,
+  curl: `curl ${base}/v1/chat/completions \\\n  -H "Authorization: Bearer ${key}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"Hello!"}]}'`,
+});
+const tabNames = { claude: 'Claude Code', openai: 'OpenAI SDK', anthropic: 'Anthropic SDK', curl: 'curl' };
+
+function renderExample(){
+  if (!state) return;
+  const base = location.origin;
+  $('#example').textContent = examples(base, state.apiKey)[tab];
+  $('#tabs').innerHTML = Object.entries(tabNames).map(([k,v]) => `<button class="${k===tab?'on':''}" data-tab="${k}">${v}</button>`).join('');
+}
+$('#tabs').addEventListener('click', (e) => { const k = e.target.dataset.tab; if (k){ tab = k; renderExample(); } });
+
+const fmtUp = (s) => s < 3600 ? Math.floor(s/60)+'m' : Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m';
+
+async function refresh(fresh){
+  const r = await fetch('/admin/state' + (fresh ? '?fresh=1' : '')); state = await r.json();
+  const pill = $('#pill'); pill.className = 'pill ' + (state.connected ? 'ok' : 'bad');
+  $('#pillText').textContent = state.connected ? 'Connected' : (state.tokenMasked ? 'Token problem' : 'Not connected');
+  $('#connectCard').classList.toggle('hide', state.connected);
+  if (!state.connected && state.reason && state.tokenMasked) $('#connectMsg').textContent = state.reason;
+  $('#keyOut').value = state.apiKey;
+  $('#oaUrl').textContent = location.origin + '/v1';
+  $('#anUrl').textContent = location.origin;
+  $('#acctTok').textContent = state.tokenMasked || 'no token';
+  $('#sReq').textContent = state.stats.requests; $('#sErr').textContent = state.stats.errors;
+  $('#sTok').textContent = (state.stats.tokensIn + state.stats.tokensOut).toLocaleString(); $('#sUp').textContent = fmtUp(state.stats.uptime);
+  const sel = $('#modelSel'); if (!sel.options.length) sel.innerHTML = state.models.map(m => `<option>${m}</option>`).join('');
+  $('#logBody').innerHTML = state.log.map(e => `<tr><td>${new Date(e.time).toLocaleTimeString([], {hour12:false})}</td><td class="${e.status<400?'s200':'sbad'}">${e.status}</td><td>${esc(e.path)}</td><td>${esc(e.model)}</td><td>${e.tokens||''}</td><td>${e.ms}ms</td><td class="sbad" title="${esc(e.error||'')}">${esc(e.error||'')}</td></tr>`).join('') || '<tr><td colspan="7" class="hint">No requests yet.</td></tr>';
+  renderExample();
+}
+
+$('#showKey').onclick = () => { const k = $('#keyOut'); const show = k.type === 'password'; k.type = show ? 'text' : 'password'; $('#showKey').textContent = show ? 'Hide' : 'Show'; };
+
+$('#connectBtn').onclick = async () => {
+  const token = $('#tokenIn').value.trim(); if (!token) return $('#connectMsg').textContent = 'Paste your token first.';
+  $('#connectBtn').disabled = true; $('#connectMsg').textContent = 'Verifying…';
+  const r = await (await fetch('/admin/config', { method:'POST', body: JSON.stringify({ token, cookie: $('#cookieIn').value }) })).json();
+  $('#connectBtn').disabled = false;
+  if (r.auth.ok) { $('#tokenIn').value = ''; toast('Connected'); } else $('#connectMsg').textContent = r.auth.reason || 'Token rejected.';
+  refresh(true);
+};
+$('#recheck').onclick = () => refresh(true).then(() => toast('Checked'));
+$('#regen').onclick = async () => { if (!confirm('Generate a new API key? Existing clients will stop working.')) return; await fetch('/admin/config', {method:'POST', body: JSON.stringify({regenerateKey:true})}); refresh(); };
+$('#disc').onclick = async () => { if (!confirm('Remove the saved DeepSeek token?')) return; await fetch('/admin/disconnect', {method:'POST'}); refresh(true); };
+
+// Playground (streams from our own OpenAI endpoint)
+let history = [];
+async function send(){
+  const input = $('#prompt'), text = input.value.trim(); if (!text || !state) return;
+  input.value = ''; history.push({ role:'user', content:text });
+  const chat = $('#chat'); if (history.length === 1) chat.innerHTML = '';
+  chat.insertAdjacentHTML('beforeend', `<div><b>You</b>\n${esc(text)}</div>\n\n`);
+  const holder = document.createElement('div'); holder.innerHTML = '<b>DeepSeek</b>\n'; const think = document.createElement('div'); think.className = 'think hide'; const out = document.createElement('span');
+  holder.append(think, out); chat.append(holder); chat.scrollTop = chat.scrollHeight;
+  $('#send').disabled = true; let answer = '';
+  try {
+    const r = await fetch('/v1/chat/completions', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+state.apiKey },
+      body: JSON.stringify({ model: $('#modelSel').value, stream:true, messages: history }) });
+    if (!r.ok) throw new Error((await r.json()).error?.message || 'HTTP '+r.status);
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true}); const lines = buf.split('\n'); buf = lines.pop();
+      for (const l of lines) {
+        if (!l.startsWith('data:') || l.includes('[DONE]')) continue;
+        const j = JSON.parse(l.slice(5)); if (j.error) throw new Error(j.error.message);
+        const d = j.choices?.[0]?.delta || {};
+        if (d.reasoning_content) { think.classList.remove('hide'); think.textContent += d.reasoning_content; }
+        if (d.content) { answer += d.content; out.textContent = answer; }
+        chat.scrollTop = chat.scrollHeight;
+      }
+    }
+    history.push({ role:'assistant', content: answer });
+  } catch (e) { out.innerHTML = `<span class="sbad">${esc(e.message)}</span>`; history.pop(); }
+  $('#send').disabled = false; refresh();
+}
+$('#send').onclick = send; $('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+refresh(); setInterval(() => refresh(), 6000);
+</script>
+</body>
+</html>

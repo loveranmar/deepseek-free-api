@@ -1,0 +1,9 @@
+# Secrets and runtime data (DeepSeek token, local API key, raw replies, captured prompts)
+data/
+
+# Third-party reference clones (downloaded for study, have their own licenses)
+refs/
+
+node_modules/
+*.log
+.DS_Store
