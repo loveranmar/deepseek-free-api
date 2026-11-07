@@ -50,11 +50,10 @@ function cancelOnKeys(ac) {
 }
 const maskKey = (k) => (k ? k.slice(0, 6) + '••••••••' + k.slice(-4) : 'none');
 const base = () => `http://localhost:${state.port}`;
-const indent = (lines) => lines.map(l => '  ' + l).join('\n') + '\n';
 
 function quit(code = 0) {
   t.cursor.show();
-  if (code === 0 && t.isTTY) { t.screen(null); t.write('\n  ' + t.TAG.info() + ' ' + p.ash('bridge down. later.') + '\n\n'); }
+  if (t.isTTY) { t.screen(null); if (code === 0) t.clear(); }
   process.exit(code);
 }
 
@@ -116,63 +115,60 @@ async function checkSession() {
   return a;
 }
 
-// ---- screens ----------------------------------------------------------------------
-// Compact header for every screen after the splash:  ░▒▓█ DEEPSEEK API █▓▒░ v1.0.0 / rule / prompt
-function headerLines(crumb = '') {
-  const w = Math.min(t.cols() - 4, 76);
-  const tagline = p.gore('░▒▓█ ') + p.blood(p.bold('DEEPSEEK')) + ' ' + p.bone(p.bold('API')) + p.gore(' █▓▒░') + '  ' + p.ash('v' + pkg.version);
-  const prompt = p.blood('root') + p.gore('@') + p.bone('deepseek') + p.gore(':') + p.pink('~') + p.blood('# ') + (crumb ? p.ash('./' + crumb.replace(/ /g, '_')) : '');
-  return ['', '  ' + t.fit(tagline, w), '  ' + p.gore('═'.repeat(w)), '  ' + t.fit(prompt, w), ''];
+// ---- layout ----------------------------------------------------------------------
+// Every screen: the banner on top with the signature under it, then a block `w` columns wide,
+// all centred in the window. `after` is how many lines a menu or input adds below the block.
+const LOVE = 'made by 𝒍𝒐𝒗𝒆';
+const W = 58;          // width of the content block on most screens
+const CHAT_W = 96;     // chat transcript width
+
+function bannerArt(roomRows, drip = 0) {
+  const art = t.banner({ max: t.cols() - 4, drip });
+  if (art && art.length + 2 <= roomRows) return art;
+  if (t.cols() >= 42 && roomRows >= 5) return t.wordmark();
+  return [];
 }
-const put = (lines) => t.write(lines.map(l => t.fit(l)).join('\n') + '\n');
-// A wrapped sentence, indented, one styled string per line.
-const say = (text, style = p.ash, lead = '') => t.wrap(text, 0, Math.min(t.cols() - 4 - t.width(lead), 76)).split('\n').map((l, i) => '  ' + (i ? ' '.repeat(t.width(lead)) : lead) + style(l));
-function header(crumb) { put(headerLines(crumb)); }
+
+function frame(body = [], { w = W, after = 0, drip = 0 } = {}) {
+  const cols = t.cols(), rows = t.rows();
+  w = Math.min(w, cols - 4);
+  const art = bannerArt(rows - body.length - after - 1, drip);
+  const aw = art.length ? Math.max(...art.map(t.width)) : 0;
+  const artLeft = Math.max(0, Math.floor((cols - aw) / 2));
+  const head = art.length ? [...art.map(l => ' '.repeat(artLeft) + l), ' '.repeat(Math.max(0, artLeft + aw - t.width(LOVE))) + p.dim(LOVE), ''] : [];
+  const top = Math.max(0, Math.floor((rows - head.length - body.length - after) / 2));
+  const left = Math.max(2, Math.floor((cols - w) / 2));
+  t.setLeft(left);
+  const lines = [...Array(top).fill(''), ...head, ...body.map(l => ' '.repeat(left) + l)];
+  t.write('\x1b[H' + lines.map(l => '\x1b[2K' + t.fit(l)).join('\n') + '\n\x1b[J');
+}
+
+// Wrapped sentence, one styled line each; `lead` (like a tag) goes in front of the first line.
+const say = (text, style = p.dim, lead = '', w = W) =>
+  t.wrap(text, 0, Math.min(t.cols() - 4, w) - t.width(lead)).split('\n').map((l, i) => (i ? ' '.repeat(t.width(lead)) : lead) + style(l));
+const centerIn = (s, w) => ' '.repeat(Math.max(0, Math.floor((Math.min(w, t.cols() - 4) - t.width(s)) / 2))) + s;
+const box = (rows, title) => t.panel(rows, { w: Math.min(W, t.cols() - 4) - 3, title });
 
 function sessionRow() {
-  if (!state.checked) return t.tag('*') + ' ' + p.ash('session ') + '  ' + p.ash('checking...');
-  if (state.connected) return t.TAG.ok() + ' ' + p.ash('session ') + '  ' + p.bone(p.bold('ALIVE')) + (state.email ? p.gore(' :: ') + p.bone(state.email) : '');
-  if (cfg.token) return t.TAG.bad() + ' ' + p.ash('session ') + '  ' + p.blood(p.bold('DEAD')) + p.gore(' :: ') + p.ash('token expired, log in again');
-  return t.TAG.warn() + ' ' + p.ash('session ') + '  ' + p.ember(p.bold('NONE')) + p.gore(' :: ') + p.ash('not logged in');
+  if (!state.checked) return t.tag('*') + ' ' + p.dim('checking');
+  if (state.connected) return t.TAG.ok() + ' ' + p.text('logged in') + (state.email ? '   ' + p.dim(state.email) : '');
+  if (cfg.token) return t.TAG.bad() + ' ' + p.red('session expired');
+  return t.TAG.warn() + ' ' + p.amber('not logged in');
 }
 function statusRows() {
-  return [
-    sessionRow(),
-    t.TAG.info() + ' ' + p.ash('api     ') + '  ' + p.bone(base()),
-    t.TAG.info() + ' ' + p.ash('key     ') + '  ' + p.bone(maskKey(cfg.apiKey)),
-  ];
+  return [sessionRow(), t.TAG.info() + ' ' + p.dim('api  ') + p.text(base()), t.TAG.info() + ' ' + p.dim('key  ') + p.text(maskKey(cfg.apiKey))];
 }
-const boxW = () => Math.min(t.cols() - 6, 64);
 
-// ---- splash: the big banner, centred, "press enter to continue" ---------------------------
-async function splash(checking) {
-  let blink = true, drip = 0, reveal = 0, animating = t.isTTY && !t.plain;
-  const center = (s, w) => ' '.repeat(Math.max(0, Math.floor((t.cols() - w) / 2))) + s;
-  const build = () => {
-    const art = t.banner({ max: t.cols() - 2, drip }) ||
-      (t.cols() >= 42 ? t.wordmark() : [p.blood(p.bold('DEEPSEEK')) + ' ' + p.bone(p.bold('API'))]);
-    const aw = Math.max(...art.map(t.width));
-    const tag1 = p.gore('[ ') + p.ash('openai + anthropic api from your deepseek session') + p.gore(' ]');
-    const tag2 = p.gore('v' + pkg.version + '  ::  github.com/loveranmar/deepseek-bridge');
-    const go = blink ? p.blood('>> ') + p.bone('press ') + p.blood(p.bold('[ENTER]')) + p.bone(' to continue') + p.blood(' <<')
-      : p.gore('>> ') + p.gore('press ') + p.crimson(p.bold('[ENTER]')) + p.gore(' to continue') + p.gore(' <<');
-    const shown = art.map((l, i) => (i < reveal || !animating ? l : ''));
-    const body = [...shown.map(l => center(l, aw)), '', center(t.fit(tag1, t.cols() - 2), Math.min(t.width(tag1), t.cols() - 2)),
-      center(t.fit(tag2, t.cols() - 2), Math.min(t.width(tag2), t.cols() - 2)), '', '', center(sessionRow(), t.width(sessionRow())), '', center(go, t.width(go))];
-    const top = Math.max(0, Math.floor((t.rows() - body.length) / 2));
-    return '\x1b[H' + '\n'.repeat(top) + body.map(l => '\x1b[2K' + t.fit(l)).join('\n') + '\x1b[J';
-  };
-  const paint = () => t.write(build());
+// ---- splash -------------------------------------------------------------------------
+async function splash() {
+  let blink = true, drip = 0;
+  const go = () => blink ? p.blue('>> ') + p.text('press ') + p.blue(p.bold('enter')) + p.blue(' <<') : p.navy('>> ') + p.faint('press ') + p.navy(p.bold('enter')) + p.navy(' <<');
+  const draw = () => { const g = go(); frame(['', g], { w: t.width(g), drip }); };
   t.cursor.hide();
-  t.screen(paint);
-  if (animating) {
-    for (reveal = 0; reveal <= 11; reveal++) { paint(); await sleep(28); }
-    for (let k = 1; k <= 10; k++) { drip = k / 10; paint(); await sleep(55); }
-    animating = false; drip = 1;
-  } else drip = 1;
-  paint();
-  checking.then(() => paint(), () => paint());
-  const timer = setInterval(() => { blink = !blink; paint(); }, 550);
+  t.screen(draw);
+  if (t.isTTY && !t.plain) for (let k = 1; k <= 12; k++) { drip = k / 12; draw(); await sleep(45); }
+  drip = 1; draw();
+  const timer = setInterval(() => { blink = !blink; draw(); }, 600);
   try {
     for (;;) {
       const k = await t.key();
@@ -182,21 +178,22 @@ async function splash(checking) {
   } finally { clearInterval(timer); t.screen(null); t.cursor.show(); }
 }
 
+// ---- home -------------------------------------------------------------------------
 async function home() {
   let last = 0;
   for (;;) {
     const items = [
-      { label: 'launch claude code', hint: 'claude, running on deepseek', value: 'claude' },
-      { label: 'chat', hint: 'talk to deepseek right here', value: 'chat' },
-      { label: state.connected ? 'switch account' : 'log in', hint: 'step by step, about a minute', value: 'login' },
-      { label: 'connection details', hint: 'base urls + api key', value: 'details' },
-      { label: 'request log', hint: state.requests.length ? `${state.requests.length} this session` : 'live traffic through the bridge', value: 'log' },
-      ...(cfg.token ? [{ label: 'log out', hint: 'forget this account on this pc', value: 'logout' }] : []),
-      { label: 'quit', hint: 'kill the bridge', value: 'quit' },
+      { label: 'launch claude code', value: 'claude' },
+      { label: 'chat', value: 'chat' },
+      { label: state.connected ? 'switch account' : 'log in', value: 'login' },
+      { label: 'connection details', value: 'details' },
+      { label: 'request log', value: 'log' },
+      ...(cfg.token ? [{ label: 'log out', value: 'logout' }] : []),
+      { label: 'quit', value: 'quit' },
     ];
-    t.screen(() => { header(); put(t.panel(statusRows(), { w: boxW(), title: 'status' }).map(l => '  ' + l)); t.write('\n'); });
+    t.screen(() => frame([...box(statusRows(), 'status'), ''], { after: items.length + 2 }));
     const initial = state.connected ? Math.min(last, items.length - 1) : items.findIndex(i => i.value === 'login');
-    const v = await t.select(items, { initial, esc: 'quit' });
+    const v = await t.select(items, { initial, esc: 'quit', minWidth: Math.min(W, t.cols() - 4) });
     if (v === null || v === 'quit') return quit(0);
     last = items.findIndex(i => i.value === v);
     await ({ claude: launchClaude, chat, login: loginScreen, details, log: requestLog, logout })[v]();
@@ -205,7 +202,7 @@ async function home() {
 
 async function needLogin() {
   if (state.connected) return true;
-  return loginScreen({ reason: cfg.token ? 'your deepseek session expired.' : 'log in to deepseek first.' });
+  return loginScreen({ reason: cfg.token ? 'session expired, log in again' : 'log in first' });
 }
 
 // ---- login ------------------------------------------------------------------------
@@ -242,23 +239,20 @@ function clearClipboard() {
   copyText(' ');
 }
 
-// Word-wrapped paragraph for a box of width `w`, each line styled.
-const para = (text, w, style = (x) => x) => t.wrap(text, 0, w).split('\n').map(style);
-
 /**
- * The guided way in, one step per screen:
- *   1 log in on chat.deepseek.com (in the user's own browser)  2 open the console
- *   3 paste the payload (copies the token)  4 we pick it up from the clipboard and verify it.
+ * The guided login, one step per screen:
+ *   1 log in on chat.deepseek.com in your own browser   2 open the console
+ *   3 run one line that copies the token                 4 we pick it up from the clipboard and check it.
  * The clipboard is watched the whole time, so copying the token early skips straight to step 4.
  */
 async function tokenGuide({ reason } = {}) {
   const TOTAL = 4;
-  const devtools = process.platform === 'darwin' ? 'Cmd+Option+J' : 'F12';
+  const mac = process.platform === 'darwin';
   const tried = new Set([SNIPPET]);
   const before = config.normalizeToken(await readClipboard());
   if (before) tried.add(before); // whatever was on the clipboard already isn't the new token
 
-  let step = 1, note = reason ? t.TAG.warn() + ' ' + p.ember(reason) : '', opened = null;
+  let step = 1, note = reason ? t.TAG.warn() + ' ' + p.amber(reason) : '', opened = null;
   let found = null, stepAbort = null;
   const watch = new AbortController();
   const watcher = (async () => {
@@ -270,15 +264,13 @@ async function tokenGuide({ reason } = {}) {
     }
   })();
 
-  // One step screen: header, progress, the step's box, an optional note, then key hints.
-  const stepScreen = (n, title, body, foot, extra = []) => {
-    const w = boxW();
-    header('login');
-    put(['  ' + p.blood(p.bold(`STEP ${n}/${TOTAL}`)) + '  ' + t.progress(n, TOTAL, Math.max(8, Math.min(24, t.cols() - 16)), false), '']);
-    put(t.panel(body(w - 2), { w, title }).map(l => '  ' + l));
-    put(['', ...(note ? [].concat(note).map(l => '  ' + l).concat(['']) : []), ...extra]);
-    if (foot) put(['  ' + foot]);
-  };
+  // step n of 4: progress, the step's box, a note if any, then `tail` lines (hints, or the input area)
+  const stepFrame = (n, title, rows, tail, after = 0) => frame([
+    p.dim(`step ${n}/${TOTAL}  `) + t.progress(n, TOTAL, 8, false), '',
+    ...box(rows, title), '',
+    ...(note ? [note, ''] : []),
+    ...tail,
+  ], { after });
 
   try {
     for (;;) {
@@ -291,13 +283,10 @@ async function tokenGuide({ reason } = {}) {
 
       if (step === 1) {
         if (opened === null) opened = openUrl(DEEPSEEK);
-        t.screen(() => stepScreen(1, 'log in on deepseek', (w) => [
-          opened ? t.TAG.ok() + ' ' + p.bone('chat.deepseek.com just opened in your browser.') : t.TAG.warn() + ' ' + p.bone('open ' + DEEPSEEK + ' in your browser.'),
-          '',
-          ...para('log in there like you normally do. the captcha is fine, that part is you, not a bot.', w, p.bone),
-          '',
-          ...para('come back here once you can see the deepseek chat.', w, p.ash),
-        ], t.hints(['enter', 'done, next'], ['o', 'open it again'], ['esc', 'abort'])));
+        t.screen(() => stepFrame(1, 'log in', [
+          p.text(opened ? 'chat.deepseek.com is open in your browser.' : 'open chat.deepseek.com in your browser.'),
+          p.text('log in, then come back here.'),
+        ], [t.hints(['enter', 'next'], ['o', 'reopen'], ['esc', 'cancel'])]));
         const k = await t.key({ signal: stepAbort.signal });
         note = '';
         if (k === undefined) continue;
@@ -308,43 +297,40 @@ async function tokenGuide({ reason } = {}) {
       }
 
       if (step === 2) {
-        t.screen(() => stepScreen(2, 'open the console', (w) => [
-          p.bone('on the deepseek tab press ') + p.blood(p.bold(devtools)),
-          '',
-          ...para('a panel pops up. click the Console tab at the top of it.', w, p.bone),
-          '',
-          ...para(process.platform === 'darwin' ? 'safari: turn on Develop menu first (settings, advanced).' : 'nothing happened? try Ctrl+Shift+J (chrome) or Ctrl+Shift+K (firefox).', w, p.ash),
-        ], t.hints(['enter', 'next'], ['esc', 'back'])));
+        t.screen(() => stepFrame(2, 'open the console', [
+          p.text('press ') + p.blue(p.bold(mac ? 'cmd+option+i' : 'ctrl+shift+i')) + p.dim(mac ? '' : '  (or f12)'),
+          p.text('click the ') + p.blue('Console') + p.text(' tab.'),
+        ], [t.hints(['enter', 'next'], ['esc', 'back'])]));
         const k = await t.key({ signal: stepAbort.signal });
         note = '';
         if (k === undefined) continue;
         if (k === '\r' || k === '\n') step = 3;
-        else if (k === '\x1b' || k === 'b') step = 1;
+        else if (k === '\x1b') step = 1;
         continue;
       }
 
-      // step 3: payload on the clipboard, watch for the token, or take a pasted one
+      // step 3: the line goes on the clipboard; wait for the token (or a pasted one)
       copyText(SNIPPET);
-      let frame = 0;
-      const watchLine = () => '  ' + t.tag(['|', '/', '-', '\\'][frame % 4]) + ' ' + p.ash('watching the clipboard for your token...');
-      t.screen(() => stepScreen(3, 'grab the token', (w) => [
-        t.TAG.ok() + ' ' + p.bone('payload copied to your clipboard:'),
-        '',
-        '    ' + p.pink(SNIPPET),
-        '',
-        ...para('paste it into the console and press enter. that copies your token and this window grabs it by itself.', w, p.bone),
-        '',
-        ...para('paste blocked? type "allow pasting", press enter, then paste again.', w, p.ash),
-      ], null, [watchLine(), '', '', '  ' + t.hints(['enter', 'on empty: copy payload again'], ['esc', 'back'])]) || t.write('\x1b[3A')); // then back up to the input line
-      const ticker = setInterval(() => { frame++; t.write('\x1b7\x1b[1A\r\x1b[2K' + t.fit(watchLine()) + '\x1b8'); }, 120);
+      let frameNo = 0;
+      const waitLine = () => t.tag(['|', '/', '-', '\\'][frameNo % 4]) + ' ' + p.dim('waiting for the token');
+      t.screen(() => {
+        stepFrame(3, 'copy the token', [
+          p.blue('1') + '  ' + p.text('type ') + p.sky('allow pasting') + p.text(' and press enter'),
+          p.blue('2') + '  ' + p.text('paste this and press enter') + p.dim('  (copied)'),
+          '',
+          '   ' + p.sky(SNIPPET),
+        ], [waitLine(), '', '', t.hints(['enter', 'copy again'], ['esc', 'back'])]);
+        t.write('\x1b[3A'); // up to the input line
+      });
+      const ticker = setInterval(() => { frameNo++; t.write('\x1b7\x1b[1A\r\x1b[2K' + t.ind() + waitLine() + '\x1b8'); }, 120);
       let typed;
-      try { typed = await t.input({ label: 'or paste it', mask: true, placeholder: 'token here, or just wait', signal: stepAbort.signal }); }
+      try { typed = await t.input({ label: 'or paste it', mask: true, signal: stepAbort.signal }); }
       finally { clearInterval(ticker); }
       note = '';
       if (typed === undefined) continue;          // the watcher found something
       if (typed === null) { step = 2; continue; } // esc
       const tok = config.normalizeToken(typed);
-      if (!tok) { note = t.TAG.ok() + ' ' + p.bone('payload copied again.'); continue; }
+      if (!tok) { note = t.TAG.ok() + ' ' + p.text('copied again'); continue; }
       tried.add(tok);
       if (await verifyStep(tok)) return true;
     }
@@ -354,35 +340,26 @@ async function tokenGuide({ reason } = {}) {
     stepAbort = null;
   }
 
-  // step 4: check the token with DeepSeek, save it
+  // step 4: check the token with DeepSeek and save it
   async function verifyStep(tok) {
-    t.screen(() => stepScreen(4, 'verify', (w) => [
-      ...para('checking the token with deepseek...', w, p.bone),
-    ], null));
-    const sp = t.spinner(p.ash('talking to chat.deepseek.com'));
+    t.screen(() => frame([p.dim(`step 4/${TOTAL}  `) + t.progress(4, TOTAL, 8, false), ''], { after: 1 }));
+    const sp = t.spinner(p.dim('checking the token'));
     const a = await ds.checkAuth(tok);
     if (!a.ok) {
       sp.stop();
-      note = [t.TAG.bad() + ' ' + p.blood('deepseek rejected that token.'), '    ' + p.ash('run the payload on the deepseek tab where you are logged in.')];
+      note = t.TAG.bad() + ' ' + p.red('deepseek rejected that token');
       return false;
     }
     config.update({ token: tok });
-    if ((await readClipboard()) === tok) clearClipboard(); // don't leave the token lying on the clipboard
+    if ((await readClipboard()) === tok) clearClipboard(); // don't leave the token on the clipboard
     await checkSession();
     sp.stop();
-    t.screen(() => {
-      header('login');
-      put(['  ' + p.blood(p.bold(`STEP ${TOTAL}/${TOTAL}`)) + '  ' + t.progress(TOTAL, TOTAL, Math.max(8, Math.min(24, t.cols() - 16)), false), '']);
-      const w = boxW();
-      put(t.panel([
-        t.TAG.ok() + ' ' + p.bone(p.bold('ACCESS GRANTED')),
-        t.TAG.ok() + ' ' + p.ash('logged in') + (state.email ? p.ash(' as ') + p.bone(state.email) : ''),
-        t.TAG.ok() + ' ' + p.ash('token saved, wiped from the clipboard'),
-        '',
-        ...para('you can close the browser tab. do not hit log out on the website, that kills this session too.', w - 2, p.ash),
-      ], { w, title: 'pwned' }).map(l => '  ' + l));
-      put(['', '  ' + t.hints(['enter', 'continue'])]);
-    });
+    t.screen(() => frame([
+      p.dim(`step 4/${TOTAL}  `) + t.progress(4, TOTAL, 8, false), '',
+      ...box([t.TAG.ok() + ' ' + p.text('logged in') + (state.email ? '   ' + p.dim(state.email) : '')], 'done'), '',
+      ...say('you can close the tab. don\'t log out there, that ends this session too.'), '',
+      t.hints(['enter', 'continue']),
+    ]));
     t.cursor.hide();
     for (;;) { const k = await t.key(); if (k === '\r' || k === '\n' || k === '\x1b' || k === ' ') break; }
     t.screen(null);
@@ -392,36 +369,39 @@ async function tokenGuide({ reason } = {}) {
 
 async function loginScreen({ reason, method } = {}) {
   if (!method || method === 'guide') return tokenGuide({ reason });
-  t.screen(() => { header('login'); if (reason) put(['  ' + t.TAG.warn() + ' ' + p.ember(reason), '']); });
+  const top = reason ? [t.TAG.warn() + ' ' + p.amber(reason), ''] : [];
+
   if (method === 'auto') {
-    put(['  ' + p.ash('your password goes straight into deepseek\'s own sign-in page. it is never saved.'), '']);
-    method = await t.select([
-      { label: 'email + password', hint: 'type them here, the rest is automatic', value: 'password' },
-      { label: 'continue with google', hint: 'sign in once in a browser window', value: 'google' },
-      { label: 'paste a token', hint: 'from a logged-in chat.deepseek.com tab', value: 'token' },
+    const items = [
+      { label: 'email + password', value: 'password' },
+      { label: 'google', value: 'google' },
+      { label: 'paste a token', value: 'token' },
       { label: 'back', value: null },
-    ]);
+    ];
+    t.screen(() => frame([...top, ...say('your password goes into deepseek\'s own sign-in page and is never saved.'), ''], { after: items.length + 2 }));
+    method = await t.select(items, { minWidth: Math.min(W, t.cols() - 4) });
     if (!method) return false;
-    t.write('\n');
-  }
+  } else t.screen(() => frame(top, { after: 4 }));
+  t.screen(null);
+  t.write('\n');
 
   if (method === 'token') {
-    const raw = await t.input({ label: 'token', mask: true, placeholder: 'paste here' });
+    const raw = await t.input({ label: 'token', mask: true });
     if (!raw) return false;
-    const sp = t.spinner('checking the token with deepseek');
+    const sp = t.spinner('checking the token');
     const tok = config.normalizeToken(raw);
     const a = await ds.checkAuth(tok);
-    if (!a.ok) { sp.fail('deepseek rejected that token. ' + p.ash(a.reason || '')); await t.anyKey(); return false; }
+    if (!a.ok) { sp.fail('deepseek rejected that token'); await t.anyKey(); return false; }
     config.update({ token: tok });
     await checkSession();
-    sp.ok('logged in' + (state.email ? ' as ' + p.bold(state.email) : ''));
+    sp.ok('logged in' + (state.email ? '   ' + p.dim(state.email) : ''));
     await sleep(900);
     return true;
   }
 
   let email = '', password = '';
   if (method === 'password') {
-    email = (await t.input({ label: 'email', value: cfg.email || '', placeholder: 'you@example.com' }) || '').trim();
+    email = (await t.input({ label: 'email', value: cfg.email || '' }) || '').trim();
     if (!email) return false;
     password = await t.input({ label: 'password', mask: true });
     if (!password) return false;
@@ -435,14 +415,14 @@ async function loginScreen({ reason, method } = {}) {
   try {
     const token = await login({
       method, email, password, signal: ac.signal,
-      onStatus: (s) => sp.update(s + p.ash('   esc cancels')),
+      onStatus: (s) => sp.update(s.toLowerCase() + p.dim('   esc cancels')),
       verify: async (tk) => (await ds.checkAuth(tk)).ok,
     });
     password = '';
     config.update({ token, ...(email ? { email } : {}) });
     if (email) state.email = email;
     await checkSession();
-    sp.ok('logged in' + (state.email ? ' as ' + p.bold(state.email) : ''));
+    sp.ok('logged in' + (state.email ? '   ' + p.dim(state.email) : ''));
     await sleep(900);
     return true;
   } catch (e) {
@@ -457,8 +437,9 @@ async function loginScreen({ reason, method } = {}) {
 }
 
 async function logout() {
-  t.screen(() => { header('logout'); put([...say('forget the deepseek session on this pc?', p.bone, t.TAG.warn() + ' '), ...say('the browser profile used for automatic sign-in is wiped too.', p.ash, '    '), '']); });
-  const v = await t.select([{ label: 'log out', value: true, tone: p.blood }, { label: 'cancel', value: false }], { initial: 1 });
+  const items = [{ label: 'log out', value: true, tone: p.red }, { label: 'cancel', value: false }];
+  t.screen(() => frame([t.TAG.warn() + ' ' + p.text('log out of deepseek on this pc?'), ''], { after: items.length + 2 }));
+  const v = await t.select(items, { initial: 1, minWidth: Math.min(W, t.cols() - 4) });
   if (!v) return;
   config.update({ token: '', cookie: '' });
   try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {}
@@ -470,7 +451,6 @@ async function logout() {
 async function launchClaude(extra = []) {
   if (!(await needLogin())) return 1;
   t.screen(null); t.clear();
-  t.write('\n  ' + t.TAG.info() + ' ' + p.bone(p.bold('claude code')) + p.ash(' on deepseek') + p.gore('  ::  ') + p.ash(`bridge on :${state.port}`) + p.gore('  ::  ') + p.ash('/model to switch') + '\n\n');
   childRunning = true;
   const code = await new Promise((resolve) => {
     const child = spawn('claude', ['--allow-dangerously-skip-permissions', '--settings', path.join(ROOT, 'assets', 'claude-settings.json'), ...extra],
@@ -480,23 +460,31 @@ async function launchClaude(extra = []) {
   });
   childRunning = false;
   if (code === 'missing') {
-    t.write('  ' + t.TAG.bad() + ' claude code is not installed. get it from ' + p.under('https://claude.com/claude-code') + '\n');
-    await t.anyKey();
+    t.screen(() => frame([t.TAG.bad() + ' ' + p.text('claude code is not installed'), p.dim('https://claude.com/claude-code')], { after: 2 }));
+    await t.anyKey('any key');
     return 1;
   }
   return code;
 }
 
 // ---- chat -----------------------------------------------------------------------------
+// The banner at the top, then the transcript (it scrolls, so no centring and no resize repaint).
 function chatHeader() {
-  t.screen(null); t.clear(); // a transcript can't be redrawn on resize, so no painter here
-  header('chat');
-  put(['  ' + p.ash('model ') + p.blood(state.model), '  ' + t.hints(['/model', 'switch'], ['/new', 'fresh chat'], ['/exit', 'back'], ['esc', 'stop a reply']), '']);
+  t.screen(null); t.clear();
+  const art = bannerArt(t.rows() - 8);
+  const aw = art.length ? Math.max(...art.map(t.width)) : 0;
+  const artLeft = Math.max(0, Math.floor((t.cols() - aw) / 2));
+  const w = Math.min(CHAT_W, t.cols() - 4);
+  t.setLeft(Math.floor((t.cols() - w) / 2));
+  const lines = ['', ...art.map(l => ' '.repeat(artLeft) + l)];
+  if (art.length) lines.push(' '.repeat(Math.max(0, artLeft + aw - t.width(LOVE))) + p.dim(LOVE));
+  lines.push('', t.ind() + p.dim('model ') + p.blue(state.model) + '   ' + t.hints(['/model', 'switch'], ['/new', 'clear'], ['/exit', 'back']), '');
+  t.write(lines.map(l => t.fit(l)).join('\n') + '\n');
 }
 
 // Streams text with a left margin and word wrap.
-function streamWriter(style = (s) => s, gutter = '  ') {
-  const max = Math.max(30, Math.min(100, t.cols() - 6));
+function streamWriter(style = (s) => s, gutter = t.ind()) {
+  const max = Math.max(30, Math.min(CHAT_W, t.cols() - 6) - (t.width(gutter) - t.ind().length) - 2);
   let col = 0, word = '';
   const flushWord = () => {
     if (!word) return;
@@ -520,10 +508,10 @@ async function reply(history) {
   const ac = new AbortController();
   currentAbort = ac;
   const release = cancelOnKeys(ac);
-  t.write('\n  ' + p.blood(p.bold('deepseek')) + p.gore(' >> ') + p.ash(state.model) + '\n');
-  const sp = t.spinner(p.ash('thinking'));
+  t.write('\n' + t.ind() + p.blue(p.bold('deepseek')) + p.dim('  ' + state.model) + '\n');
+  const sp = t.spinner(p.dim('thinking'));
   let started = false, mode = null, answer = '';
-  const think = streamWriter((s) => p.ash(p.italic(s)), '  ' + p.gore('┃ '));
+  const think = streamWriter((s) => p.dim(p.italic(s)), t.ind() + p.navy('│ '));
   const text = streamWriter();
   const begin = () => { if (!started) { sp.stop(); started = true; } };
   try {
@@ -546,9 +534,9 @@ async function reply(history) {
     return answer;
   } catch (e) {
     begin(); think.end(); text.end();
-    if (ac.signal.aborted) { t.write('\n  ' + t.TAG.warn() + ' ' + p.ash('stopped') + '\n\n'); return answer || null; }
+    if (ac.signal.aborted) { t.write('\n' + t.ind() + p.dim('stopped') + '\n\n'); return answer || null; }
     if (e.status === 401) state.connected = false;
-    t.write('\n' + say(e.message, p.bone, t.TAG.bad() + ' ').join('\n') + '\n\n');
+    t.write('\n' + say(e.message, p.text, t.TAG.bad() + ' ', CHAT_W).join('\n') + '\n\n');
     return null;
   } finally {
     release();
@@ -561,7 +549,7 @@ async function chat() {
   chatHeader();
   const history = [];
   for (;;) {
-    const raw = await t.input({ prefix: '  ' + p.bone(p.bold('you')) + p.gore(' >> '), placeholder: 'message deepseek' });
+    const raw = await t.input({ prefix: t.ind() + p.text(p.bold('you')) + p.blue(' > ') });
     if (raw === null) return;
     const s = raw.trim();
     if (!s) continue;
@@ -572,7 +560,7 @@ async function chat() {
       const ids = Object.keys(MODELS);
       const m = await t.select(ids.map(id => ({ label: id, hint: MODEL_HINT[id], value: id })), { initial: ids.indexOf(state.model) });
       if (m) state.model = m;
-      t.write('\n  ' + p.ash('model ') + p.blood(state.model) + '\n\n');
+      t.write('\n' + t.ind() + p.dim('model ') + p.blue(state.model) + '\n\n');
       continue;
     }
     history.push({ role: 'user', content: s });
@@ -580,7 +568,7 @@ async function chat() {
     if (answer === null) history.pop();
     else history.push({ role: 'assistant', content: answer });
     if (!state.connected) {
-      t.write(say('your deepseek session expired. press any key to log in again.', p.ember, t.TAG.warn() + ' ').join('\n') + '\n');
+      t.write(t.ind() + t.TAG.warn() + ' ' + p.amber('session expired') + p.dim('   any key to log in again') + '\n');
       await t.anyKey(null);
       if (!(await loginScreen())) return;
       chatHeader();
@@ -590,74 +578,67 @@ async function chat() {
 
 // ---- details & log --------------------------------------------------------------------
 async function details() {
+  let note = '';
   for (;;) {
     const key = state.showKey ? cfg.apiKey : maskKey(cfg.apiKey);
-    t.screen(() => {
-      header('details');
-      put(t.panel([
-        t.TAG.info() + ' ' + p.ash('openai    ') + p.bone(base() + '/v1'),
-        t.TAG.info() + ' ' + p.ash('anthropic ') + p.bone(base()),
-        t.TAG.info() + ' ' + p.ash('api key   ') + p.bone(key),
-      ], { w: boxW(), title: 'endpoints' }).map(l => '  ' + l));
-      put(['', ...say('point any openai or anthropic client here. works while this app is open.'), '']);
-    });
-    const v = await t.select([
+    const items = [
       { label: 'copy api key', value: 'key' },
-      { label: 'copy claude code setup', hint: 'export lines for another terminal', value: 'env' },
-      { label: state.showKey ? 'hide api key' : 'show api key', value: 'show' },
-      { label: 'new api key', hint: 'the old one stops working', value: 'regen' },
+      { label: 'copy claude code env', value: 'env' },
+      { label: state.showKey ? 'hide key' : 'show key', value: 'show' },
+      { label: 'new key', value: 'regen' },
       { label: 'back', value: null },
-    ]);
+    ];
+    t.screen(() => frame([
+      ...box([p.dim('openai     ') + p.text(base() + '/v1'), p.dim('anthropic  ') + p.text(base()), p.dim('key        ') + p.text(key)], 'api'), '',
+      ...(note ? [note, ''] : []),
+    ], { after: items.length + 2 }));
+    note = '';
+    const v = await t.select(items, { minWidth: Math.min(W, t.cols() - 4) });
     if (!v) return;
     if (v === 'show') { state.showKey = !state.showKey; continue; }
-    if (v === 'regen') { config.update({ apiKey: 'sk-ds-' + require('crypto').randomBytes(18).toString('hex') }); continue; }
-    const text = v === 'key' ? cfg.apiKey
-      : `export ANTHROPIC_BASE_URL=${base()}\nexport ANTHROPIC_AUTH_TOKEN=${cfg.apiKey}\nexport ANTHROPIC_MODEL=deepseek-chat\n`;
-    copyText(text);
-    t.write('\n  ' + t.TAG.ok() + ' ' + p.bone('copied') + '\n');
-    await sleep(700);
+    if (v === 'regen') { config.update({ apiKey: 'sk-ds-' + require('crypto').randomBytes(18).toString('hex') }); note = t.TAG.ok() + ' ' + p.text('new key made, the old one is dead'); continue; }
+    copyText(v === 'key' ? cfg.apiKey
+      : `export ANTHROPIC_BASE_URL=${base()}\nexport ANTHROPIC_AUTH_TOKEN=${cfg.apiKey}\nexport ANTHROPIC_MODEL=deepseek-chat\n`);
+    note = t.TAG.ok() + ' ' + p.text('copied');
   }
 }
 
+const LOG_W = 92;
 function logLines() {
-  const rows = Math.max(5, (process.stdout.rows || 30) - 12);
-  if (!state.requests.length) return say('nothing yet. requests from claude code or any other client show up here live.', p.ash, t.TAG.info() + ' ');
+  const max = Math.max(3, t.rows() - 22);
+  if (!state.requests.length) return [p.dim('no requests yet')];
   const lines = [];
   for (const e of state.requests) {
-    if (lines.length >= rows) break;
+    if (lines.length >= max) break;
     const time = new Date(e.time).toLocaleTimeString([], { hour12: false });
-    const st = e.status < 400 ? t.TAG.ok() + ' ' + p.bone(String(e.status)) : t.TAG.bad() + ' ' + p.blood(String(e.status));
-    lines.push(`  ${p.gore(time)}  ${st}  ${p.bone(t.pad(e.path, 22))} ${p.pink(t.pad(String(e.model), 18))} ${p.ash(String(e.ms).padStart(6) + ' ms')}${e.tokens ? p.ash('  ~' + e.tokens + ' tok') : ''}`);
-    if (e.error) lines.push('  ' + ' '.repeat(14) + p.blood(e.error));
+    const st = e.status < 400 ? p.sky(String(e.status)) : p.red(String(e.status));
+    lines.push(`${p.dim(time)}  ${st}  ${p.text(t.pad(e.path, 22))} ${p.blue(t.pad(String(e.model), 18))} ${p.dim(String(e.ms).padStart(6) + ' ms')}${e.tokens ? p.dim('  ~' + e.tokens + ' tok') : ''}`);
+    if (e.error) lines.push(' '.repeat(10) + p.red(e.error));
   }
   return lines;
 }
 
 async function requestLog() {
-  const view = t.live();
-  const draw = () => view.render([...logLines(), '', '  ' + t.hints(['any key', 'back'])]);
-  t.screen(() => header('request_log'));
-  logListener = draw; draw();
-  t.setWidget(() => { view.reset(); draw(); });
+  const draw = () => frame([...logLines(), '', t.hints(['any key', 'back'])], { w: LOG_W });
+  t.screen(draw);
+  logListener = draw;
   await t.key();
-  logListener = null; t.setWidget(null);
+  logListener = null;
 }
 
 // ---- subcommands -------------------------------------------------------------------------
 function help() {
-  const art = t.banner({ drip: 1 }) || t.wordmark();
-  const c = (cmdS, d) => '    ' + p.blood(t.pad(cmdS, 25)) + p.ash(d);
-  console.log(['', ...art.map(l => '  ' + l), '', '  ' + p.gore('v' + pkg.version + '  ::  openai + anthropic api from your deepseek session'), '',
-    '  ' + p.bone(p.bold('usage')),
+  const art = t.banner() || t.wordmark();
+  const c = (cmdS, d) => '    ' + p.blue(t.pad(cmdS, 25)) + p.dim(d);
+  console.log(['', ...art.map(l => '  ' + l), '  ' + p.dim(LOVE + '  ·  v' + pkg.version), '',
     c('deepseek', 'open the app'),
     c('deepseek claude [args]', 'launch claude code on deepseek'),
     c('deepseek chat', 'chat in the terminal'),
-    c('deepseek login', 'step-by-step login (or --token <t>)'),
-    c('deepseek logout', 'forget the session on this pc'),
+    c('deepseek login', 'log in (or --token <t>)'),
+    c('deepseek logout', 'forget the session'),
     c('deepseek status', 'is the session alive?'),
-    c('deepseek serve', 'api only, with a live request log'),
-    '', '  ' + p.bone(p.bold('options')),
-    c('--port <n>', 'api port (default 8788, next free one if taken)'), ''].map(l => t.isTTY ? t.fit(l) : l).join('\n'));
+    c('deepseek serve', 'api only, with a request log'),
+    c('--port <n>', 'api port (default 8788)'), ''].map(l => t.isTTY ? t.fit(l) : l).join('\n'));
 }
 
 async function main() {
@@ -665,9 +646,9 @@ async function main() {
   if (flag('--version') || flag('-v')) return console.log(pkg.version);
 
   if (cmd === 'status') {
-    const sp = t.spinner('checking your deepseek session');
+    const sp = t.spinner('checking the session');
     const a = await checkSession();
-    a.ok ? sp.ok('session alive' + (state.email ? ' :: ' + p.bold(state.email) : '')) : sp.fail(cfg.token ? 'session dead: ' + p.ash(a.reason) : 'not logged in');
+    a.ok ? sp.ok('logged in' + (state.email ? '   ' + p.dim(state.email) : '')) : sp.fail(cfg.token ? 'session expired' : 'not logged in');
     return process.exit(a.ok ? 0 : 1);
   }
   if (cmd === 'logout') { config.update({ token: '', cookie: '', email: '' }); fs.rmSync(PROFILE, { recursive: true, force: true }); console.log('  ' + t.TAG.ok() + ' logged out'); return; }
@@ -686,26 +667,20 @@ async function main() {
 
   if (cmd === 'serve') {
     await startServer({ quiet: false });
-    const a = await checkSession();
-    header('serve');
-    console.log(t.panel(statusRows(), { w: boxW(), title: 'status' }).map(l => '  ' + l).join('\n'));
-    if (!a.ok) console.log('\n' + say('not connected. run "deepseek login" in another terminal, then restart this.', p.ember, t.TAG.warn() + ' ').join('\n'));
-    console.log('\n  ' + t.hints(['ctrl+c', 'stop']) + '\n');
+    await checkSession();
+    console.log(['', ...statusRows().map(r => '  ' + r), '', '  ' + t.hints(['ctrl+c', 'stop']), ''].join('\n'));
     return;
   }
 
   await startServer();
   const checking = checkSession().catch(() => {});
-  if (!cmd) {
-    if (!(await splash(checking))) return quit(0);
-  } else {
-    header();
-  }
+  if (!cmd && !(await splash())) return quit(0);
   if (!state.checked) {
-    t.write('\n');
-    const sp = t.spinner('checking your deepseek session');
+    t.screen(() => frame([], { after: 1 }));
+    const sp = t.spinner(p.dim('checking the session'));
     await checking;
     sp.stop();
+    t.screen(null);
   }
 
   if (cmd === 'claude') { const code = await launchClaude(argv.slice(1)); return quit(typeof code === 'number' ? code : 0); }

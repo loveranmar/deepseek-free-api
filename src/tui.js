@@ -1,5 +1,5 @@
 'use strict';
-// Tiny dependency-free terminal UI kit: colour, the blood-red banner, menus, inputs, spinners.
+// Tiny dependency-free terminal UI kit: colour, the banner, menus, inputs, spinners.
 const out = process.stdout;
 const isTTY = !!out.isTTY;
 const env = process.env;
@@ -18,27 +18,26 @@ const bgCode = (rgb) => truecolor ? `48;2;${rgb.join(';')}` : `48;5;${to256(rgb)
 const sgr = (code, s) => plain ? s : `\x1b[${code}m${s}\x1b[0m`;
 const fg = (h) => (s) => sgr(fgCode(hex(h)), s);
 
+// DeepSeek blue, with red kept for errors and the drips.
 const C = {
-  blood: '#FF1F3D', crimson: '#C4001F', gore: '#6E0A18', clot: '#2A0308',
-  bone: '#F0E6E6', ash: '#8E7A7D', ember: '#FF8A3D', pink: '#FF6B81',
+  blue: '#4D6BFE', sky: '#8FA2FF', navy: '#26346E', deep: '#121935',
+  text: '#E6E8F0', dim: '#7D8399', faint: '#3A4058', red: '#FF3B57', amber: '#FFB547',
 };
 const paint = {
-  blood: fg(C.blood), crimson: fg(C.crimson), gore: fg(C.gore), bone: fg(C.bone), ash: fg(C.ash), ember: fg(C.ember), pink: fg(C.pink),
-  // semantic names used around the app
-  brand: fg(C.blood), violet: fg(C.crimson), sky: fg(C.pink),
-  ok: fg(C.bone), bad: fg(C.blood), warn: fg(C.ember),
-  bold: (s) => sgr('1', s), dim: fg(C.ash), italic: (s) => sgr('3', s), under: (s) => sgr('4', s),
-  sel: (s) => plain ? s : `\x1b[${bgCode(hex(C.clot))}m${String(s).replace(/\x1b\[0m/g, `\x1b[0m\x1b[${bgCode(hex(C.clot))}m`)}\x1b[0m`,
+  blue: fg(C.blue), sky: fg(C.sky), navy: fg(C.navy), text: fg(C.text), red: fg(C.red), amber: fg(C.amber), faint: fg(C.faint),
+  ok: fg(C.sky), bad: fg(C.red), warn: fg(C.amber),
+  bold: (s) => sgr('1', s), dim: fg(C.dim), italic: (s) => sgr('3', s), under: (s) => sgr('4', s),
+  sel: (s) => plain ? s : `\x1b[${bgCode(hex(C.deep))}m${String(s).replace(/\x1b\[0m/g, `\x1b[0m\x1b[${bgCode(hex(C.deep))}m`)}\x1b[0m`,
 };
 // [+] [x] [!] [*] [?] tags
-const tag = (ch, tone = paint.blood) => paint.gore('[') + tone(paint.bold(ch)) + paint.gore(']');
+const tag = (ch, tone = paint.blue) => paint.navy('[') + tone(paint.bold(ch)) + paint.navy(']');
 const TAG = {
-  ok: () => tag('+', paint.bone), bad: () => tag('x', paint.blood), warn: () => tag('!', paint.ember),
-  info: () => tag('*', paint.blood), ask: () => tag('?', paint.blood),
+  ok: () => tag('+', paint.sky), bad: () => tag('x', paint.red), warn: () => tag('!', paint.amber),
+  info: () => tag('*', paint.blue), ask: () => tag('?', paint.blue),
 };
 
 function lerp(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
-function gradient(text, stops = [C.blood, C.crimson]) {
+function gradient(text, stops = [C.sky, C.blue]) {
   if (plain) return text;
   const chars = [...text], cs = stops.map(hex), n = Math.max(1, chars.length - 1);
   return chars.map((ch, i) => {
@@ -70,15 +69,15 @@ const BANNER = [
 ];
 const SPLIT = 80; // "deepseek" is columns 0-79, "api" starts at 86
 
-// Drips hang off the bottom edge (row 7) of the letters: [column, length].
-const DRIPS = [[3, 2], [12, 4], [17, 1], [24, 3], [42, 2], [47, 4], [53, 1], [61, 3], [66, 2], [90, 3], [94, 1]];
+// A few drips hang off the bottom edge (row 7) of the letters: [column, length].
+const DRIPS = [[12, 3], [24, 2], [47, 3], [61, 1], [90, 2]];
 
 /**
- * The big "deepseek api" banner, blood red with dark shadows and dripping.
+ * The big "deepseek api" banner: DeepSeek blue with dark shadows, optionally dripping.
  * Returns coloured lines, or null when the terminal is too narrow.
  * `drip` (0..1) is how far the drips have run (for the splash animation).
  */
-function banner({ max = cols() - 2, drip = 1 } = {}) {
+function banner({ max = cols() - 2, drip = 0 } = {}) {
   const full = max >= 110, wide = full || max >= SPLIT;
   if (!wide) return null;
   const w = full ? 110 : SPLIT;
@@ -96,8 +95,9 @@ function banner({ max = cols() - 2, drip = 1 } = {}) {
       marks[r][c] = k === n - 1 && n === len ? 'tip' : 'drip';
     }
   }
-  const top = hex('#FF3550'), bot = hex('#7A0012');
-  const boneTop = hex(C.bone), boneBot = hex('#9C8A8D');
+  const top = hex('#A9B8FF'), mid = hex(C.blue), bot = hex('#2D45C8');
+  const apiTop = hex('#F2F4FA'), apiBot = hex('#8D93A8');
+  const blue = (t) => (t < 0.5 ? lerp(top, mid, t * 2) : lerp(mid, bot, (t - 0.5) * 2));
   return grid.map((row, r) => {
     if (plain) return row.join('').replace(/\s+$/, '');
     const t = Math.min(1, r / 9);
@@ -106,10 +106,10 @@ function banner({ max = cols() - 2, drip = 1 } = {}) {
       if (ch === ' ') { s += ' '; return; }
       const api = c >= SPLIT;
       let code;
-      if (marks[r][c] === 'tip') code = fgCode(hex(C.blood));
-      else if (marks[r][c] === 'drip') code = fgCode(hex(C.crimson));
-      else if (ch === '$') code = fgCode(api ? lerp(boneTop, boneBot, t) : lerp(top, bot, t));
-      else code = fgCode(hex(api ? '#4A3A3D' : '#4A0610'));
+      if (marks[r][c] === 'tip') code = fgCode(hex(C.red));
+      else if (marks[r][c] === 'drip') code = fgCode(hex('#B0172F'));
+      else if (ch === '$') code = fgCode(api ? lerp(apiTop, apiBot, t) : blue(t));
+      else code = fgCode(hex(api ? '#3C4152' : '#22306A'));
       s += `\x1b[${code}m${ch}`;
     });
     return s.replace(/\s+$/, '') + '\x1b[0m';
@@ -138,7 +138,7 @@ function wordmark(word = 'DEEPSEEK') {
     lines.push(s.replace(/\s+$/, ''));
   }
   const w = Math.max(...lines.map(l => l.length));
-  return lines.map((l, i) => gradient(pad(l, w), [['#FF3550', '#E0102E', '#9A0018'][i], C.crimson]));
+  return lines.map((l, i) => gradient(pad(l, w), [['#A9B8FF', C.blue, '#2D45C8'][i], C.blue]));
 }
 
 // Cut a coloured string to `n` visible columns (so it never wraps and breaks in-place redraws).
@@ -151,7 +151,7 @@ function fit(s, n = cols() - 1) {
     if (w >= n - 1) break;
     o += m[0]; w++;
   }
-  return o + (plain ? '…' : '\x1b[0m' + paint.gore('…'));
+  return o + (plain ? '…' : '\x1b[0m' + paint.faint('…'));
 }
 
 // ---- screen -------------------------------------------------------------------
@@ -161,6 +161,10 @@ const clear = () => { if (isTTY) write('\x1b[2J\x1b[3J\x1b[H'); };
 // Resizing: the current screen's painter redraws everything, then the active widget (menu, input, live view)
 // draws itself again underneath. Screens that can't be rebuilt (a chat transcript) set no painter.
 let painter = null, widget = null, resizeTimer = null;
+// Left margin for widgets, so screens can sit in the middle of the window.
+let LEFT = 2;
+const ind = () => ' '.repeat(LEFT);
+function setLeft(n) { LEFT = Math.max(2, n); }
 function screen(fn) { painter = fn; widget = null; if (fn) { clear(); fn(); } }
 function setWidget(fn) { widget = fn; }
 out.on && out.on('resize', () => {
@@ -188,9 +192,9 @@ function live() {
 // Square box with an optional [ title ]. `rows` are pre-coloured strings.
 function panel(rws, { w, title } = {}) {
   const inner = Math.min(cols() - 6, w || Math.max(...rws.map(width), title ? width(title) + 6 : 0) + 2);
-  const b = paint.gore;
+  const b = paint.navy;
   const top = title
-    ? b('┌─[ ') + paint.blood(paint.bold(fit(title, inner - 4))) + b(' ]' + '─'.repeat(Math.max(0, inner - width(title) - 4)) + '┐')
+    ? b('┌─[ ') + paint.blue(paint.bold(fit(title, inner - 4))) + b(' ]' + '─'.repeat(Math.max(0, inner - width(title) - 4)) + '┐')
     : b('┌' + '─'.repeat(inner + 1) + '┐');
   return [top, ...rws.map(r => b('│') + ' ' + pad(fit(r, inner - 1), inner - 1) + ' ' + b('│')), b('└' + '─'.repeat(inner + 1) + '┘')];
 }
@@ -198,11 +202,11 @@ function panel(rws, { w, title } = {}) {
 // [##########..........] 2/4
 function progress(n, total, w = 24, count = true) {
   const fill = Math.round(w * n / total);
-  return paint.gore('[') + paint.blood('#'.repeat(fill)) + paint.gore('.'.repeat(w - fill)) + paint.gore(']') + (count ? ' ' + paint.ash(`${n}/${total}`) : '');
+  return paint.blue('■'.repeat(fill)) + paint.faint('■'.repeat(w - fill)) + (count ? '  ' + paint.dim(`${n}/${total}`) : '');
 }
 
 // Key hints: [enter] next  [esc] abort
-const hints = (...pairs) => pairs.map(([k, v]) => paint.gore('[') + paint.blood(k) + paint.gore(']') + ' ' + paint.ash(v)).join('   ');
+const hints = (...pairs) => pairs.map(([k, v]) => paint.navy('[') + paint.blue(k) + paint.navy(']') + ' ' + paint.dim(v)).join('   ');
 
 // ---- keys -----------------------------------------------------------------------
 function keys(handler) {
@@ -226,23 +230,23 @@ const KEY = { up: ['\x1b[A', '\x1bOA', 'k'], down: ['\x1b[B', '\x1bOB', 'j'], en
 /**
  * Arrow-key menu. items: [{ label, hint, value, tone }]. Resolves to the value, or null on Esc / q.
  */
-function select(items, { initial = 0, footer = true, esc = 'back' } = {}) {
+function select(items, { initial = 0, footer = true, esc = 'back', minWidth = 0 } = {}) {
   return new Promise((resolve) => {
     let i = Math.max(0, Math.min(items.length - 1, initial));
     const view = live();
     const lw = Math.max(...items.map(it => width(it.label)));
-    const rowW = Math.min(cols() - 4, Math.max(...items.map(it => 12 + lw + (it.hint ? width(it.hint) + 6 : 0))) + 2);
+    const rowW = Math.max(minWidth, Math.max(...items.map(it => 9 + lw + (it.hint ? width(it.hint) + 3 : 0))) + 2);
     const draw = () => {
       const lines = items.map((it, k) => {
         const on = k === i;
-        const num = String(k + 1).padStart(2, '0');
-        const hint = it.hint ? '  ' + paint.gore('//') + ' ' + paint.ash(it.hint) : '';
-        const rw = Math.min(rowW, cols() - 4);
-        if (!on) return '  ' + fit(`   ${paint.gore('[' + num + ']')} ${pad(it.tone ? it.tone(it.label) : it.label, lw)}${hint}`, rw);
-        const label = paint.bold(it.tone ? it.tone(it.label) : paint.bone(it.label));
-        return '  ' + paint.sel(pad(fit(` ${paint.blood('▶')} ${paint.blood('[' + num + ']')} ${pad(label, lw)}${hint}`, rw), rw));
+        const num = String(k + 1);
+        const hint = it.hint ? '   ' + paint.dim(it.hint) : '';
+        const rw = Math.min(rowW, cols() - LEFT - 2);
+        if (!on) return ind() + fit(`   ${paint.navy('[' + num + ']')} ${pad(it.tone ? it.tone(it.label) : paint.text(it.label), lw)}${hint}`, rw);
+        const label = paint.bold(it.tone ? it.tone(it.label) : paint.text(it.label));
+        return ind() + paint.sel(pad(fit(` ${paint.blue('>')} ${paint.blue('[' + num + ']')} ${pad(label, lw)}${hint}`, rw), rw));
       });
-      if (footer) lines.push('', '  ' + hints(['↑↓', 'move'], ['enter', 'select'], ...(items.length < 10 ? [['1-' + items.length, 'jump']] : []), ['esc', esc]));
+      if (footer) lines.push('', ind() + hints(['↑↓', 'move'], ['enter', 'select'], ['esc', esc]));
       view.render(lines);
     };
     cursor.hide(); draw();
@@ -259,7 +263,7 @@ function select(items, { initial = 0, footer = true, esc = 'back' } = {}) {
       done(); setWidget(null);
       // Fold the menu into one line showing the choice (or nothing when backing out).
       const it = items.find(x => x.value === v);
-      view.render(v === null || !it ? [] : [`  ${paint.blood('>>')} ${it.label}`]);
+      view.render(v === null || !it ? [] : [`${ind()}${paint.blue('>')} ${it.label}`]);
       cursor.show(); resolve(v);
     }
   });
@@ -270,12 +274,12 @@ function select(items, { initial = 0, footer = true, esc = 'back' } = {}) {
 function input({ label, mask = false, value = '', placeholder = '', prefix: custom, signal } = {}) {
   return new Promise((resolve) => {
     let v = value;
-    const prefix = custom ?? `  ${TAG.ask()} ${paint.ash(label)} ${paint.blood('>>')} `;
     const draw = () => {
+      const prefix = custom ?? `${ind()}${paint.dim(label)} ${paint.blue('>')} `;
       const shown = mask ? '*'.repeat([...v].length) : v;
       const room = Math.max(4, cols() - width(prefix) - 2);
       const vis = [...shown].length > room ? '…' + [...shown].slice(-(room - 1)).join('') : shown;
-      write('\r\x1b[2K' + prefix + (vis ? paint.bone(vis) : paint.gore(fit(placeholder, room))) + (vis ? '' : `\r\x1b[${width(prefix)}C`));
+      write('\r\x1b[2K' + prefix + (vis ? paint.text(vis) : paint.faint(fit(placeholder, room))) + (vis ? '' : `\r\x1b[${width(prefix)}C`));
     };
     cursor.show(); draw();
     setWidget(() => { cursor.show(); draw(); });
@@ -305,7 +309,7 @@ function key({ signal } = {}) {
 
 // Waits for one key with a prompt line. Resolves to the key string.
 async function anyKey(prompt = 'press any key to go back') {
-  if (prompt) write('\n  ' + paint.gore('[ ') + paint.ash(prompt) + paint.gore(' ]'));
+  if (prompt) write('\n' + ind() + paint.dim(prompt));
   const k = await key();
   cursor.show(); write('\n');
   return k;
@@ -323,11 +327,11 @@ function spinner(text) {
   cursor.hide();
   const tick = () => {
     const secs = Math.floor((Date.now() - t0) / 1000);
-    write('\r\x1b[2K  ' + tag(FRAMES[i++ % FRAMES.length]) + ' ' + msg + (secs >= 3 ? paint.gore(`  ${secs}s`) : ''));
+    write('\r\x1b[2K' + ind() + tag(FRAMES[i++ % FRAMES.length]) + ' ' + msg + (secs >= 3 ? paint.faint(`  ${secs}s`) : ''));
   };
   tick();
   const timer = setInterval(tick, 90);
-  const end = (sym, s) => { clearInterval(timer); write('\r\x1b[2K  ' + sym + ' ' + (s ?? msg) + '\n'); cursor.show(); };
+  const end = (sym, s) => { clearInterval(timer); write('\r\x1b[2K' + ind() + sym + ' ' + (s ?? msg) + '\n'); cursor.show(); };
   return {
     update(s) { msg = s; tick(); },
     ok(s) { end(TAG.ok(), s); },
@@ -353,5 +357,5 @@ function wrap(text, indent = 2, max = cols() - 4) {
 
 module.exports = {
   paint, gradient, banner, wordmark, panel, progress, hints, tag, TAG, select, input, key, anyKey, spinner, live,
-  clear, cursor, write, wrap, width, pad, strip, fit, cols, rows, keys, isTTY, plain, C, screen, setWidget,
+  clear, cursor, write, wrap, width, pad, strip, fit, cols, rows, keys, isTTY, plain, C, screen, setWidget, setLeft, ind,
 };
