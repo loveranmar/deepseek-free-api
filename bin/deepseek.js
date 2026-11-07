@@ -139,7 +139,7 @@ async function home() {
     const items = [
       { label: 'Launch Claude Code', hint: 'claude, running on DeepSeek', value: 'claude' },
       { label: 'Chat', hint: 'talk to DeepSeek right here', value: 'chat' },
-      { label: state.connected ? 'Switch account' : 'Log in', hint: 'email and password, Google, or a token', value: 'login' },
+      { label: state.connected ? 'Switch account' : 'Log in', hint: 'guided, about a minute', value: 'login' },
       { label: 'Connection details', hint: 'base URLs and API key', value: 'details' },
       { label: 'Request log', hint: state.requests.length ? `${state.requests.length} this session` : 'live traffic through the bridge', value: 'log' },
       ...(cfg.token ? [{ label: 'Log out', hint: 'forget this account on this PC', value: 'logout' }] : []),
@@ -159,10 +159,112 @@ async function needLogin() {
 }
 
 // ---- login ------------------------------------------------------------------------
-async function loginScreen({ reason, method } = {}) {
+const DEEPSEEK = 'https://chat.deepseek.com';
+// Pasted into the browser console: copies the session token to the clipboard.
+const SNIPPET = 'copy(JSON.parse(localStorage.userToken).value)';
+const looksLikeToken = (s) => /^[A-Za-z0-9+/_.=-]{24,4096}$/.test(s);
+
+function openUrl(url) {
+  const [bin, args] = process.platform === 'darwin' ? ['open', [url]]
+    : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+    : ['xdg-open', [url]];
+  try { spawn(bin, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref(); return true; } catch { return false; }
+}
+
+// Current clipboard text, or '' (never throws). Async so the screen stays responsive.
+function readClipboard() {
+  const tools = process.platform === 'darwin' ? [['pbpaste', []]]
+    : process.platform === 'win32' ? []
+    : [...(process.env.WAYLAND_DISPLAY ? [['wl-paste', ['--no-newline', '--type', 'text/plain']]] : []),
+       ['xclip', ['-selection', 'clipboard', '-o']], ['xsel', ['-b', '-o']]];
+  return new Promise((resolve) => {
+    const next = (i) => {
+      if (i >= tools.length) return resolve('');
+      require('child_process').execFile(tools[i][0], tools[i][1], { timeout: 1500, maxBuffer: 64 * 1024 },
+        (err, out) => (err ? next(i + 1) : resolve(String(out).trim())));
+    };
+    next(0);
+  });
+}
+
+function clearClipboard() {
+  if (process.platform === 'linux' && process.env.WAYLAND_DISPLAY && spawnSync('wl-copy', ['--clear'], { stdio: 'ignore', timeout: 3000 }).status === 0) return;
+  copyText(' ');
+}
+
+// The guided way in: log in on chat.deepseek.com in your own browser, run one line in its console,
+// and this screen picks the token up from the clipboard (or you paste it).
+async function tokenGuide({ reason } = {}) {
   header(p.bold('Log in'));
   if (reason) t.write('  ' + p.warn(reason) + '\n\n');
-  if (!method) {
+
+  const opened = openUrl(DEEPSEEK);
+  copyText(SNIPPET);
+  const devtools = process.platform === 'darwin' ? 'Cmd+Option+J' : 'F12';
+  const n = (i) => p.brand(p.bold(String(i)));
+  t.write(indent(t.panel([
+    n(1) + '  ' + p.bold('Log in on chat.deepseek.com'),
+    '   ' + p.dim(opened ? 'It just opened in your browser. Captcha and all, as usual.' : 'Open ' + DEEPSEEK + ' in your browser.'),
+    '',
+    n(2) + '  ' + p.bold(`Press ${devtools}`) + ' and click the ' + p.bold('Console') + ' tab',
+    '   ' + p.dim('Do this on the DeepSeek tab, once you can see the chat.'),
+    '',
+    n(3) + '  ' + p.bold('Paste and press Enter') + p.dim('   (already on your clipboard)'),
+    '   ' + p.sky(SNIPPET),
+    '   ' + p.dim('Blocked? Type ') + 'allow pasting' + p.dim(', press Enter, then paste again.'),
+    '',
+    n(4) + '  ' + p.bold('Done.') + ' This window notices the token by itself.',
+  ], { w: 64, title: p.dim('4 steps · about a minute') })));
+  t.write('\n  ' + p.dim('Or paste the token below yourself.  esc goes back') + '\n\n');
+
+  const tried = new Set([SNIPPET]);
+  const initial = await readClipboard();
+  if (initial) tried.add(initial); // whatever was there before isn't the new token
+
+  let msg = '';
+  for (;;) {
+    t.write('\r\x1b[2K  ' + (msg || p.dim('◌ Watching the clipboard for your token')) + '\n');
+    msg = '';
+    const ac = new AbortController();
+    let found = null;
+    const watcher = (async () => {
+      while (!ac.signal.aborted) {
+        await sleep(800);
+        if (ac.signal.aborted) return;
+        const clip = config.normalizeToken(await readClipboard());
+        if (clip && !tried.has(clip) && looksLikeToken(clip)) { found = clip; ac.abort(); return; }
+      }
+    })();
+    const typed = await t.input({ label: 'Token', mask: true, placeholder: 'paste here, or just wait', signal: ac.signal });
+    ac.abort(); await watcher;
+    if (typed === null) return false;
+    const tok = found || config.normalizeToken(typed);
+    if (!tok) { t.write('\x1b[2A'); continue; }
+    tried.add(tok);
+
+    t.write((found ? '\x1b[1A' : '\x1b[2A\r\x1b[2K\x1b[1B\r\x1b[2K\x1b[1A') + '\r\x1b[2K');
+    const sp = t.spinner(found ? 'Found a token on the clipboard, checking it with DeepSeek' : 'Checking the token with DeepSeek');
+    const a = await ds.checkAuth(tok);
+    if (!a.ok) {
+      sp.stop();
+      msg = p.bad('✗') + ' ' + (found ? 'That clipboard text isn\'t a working token.' : 'DeepSeek didn\'t accept that token.') + p.dim(' Still watching, try step 3 again.');
+      continue;
+    }
+    config.update({ token: tok });
+    if (found && (await readClipboard()) === tok) clearClipboard(); // don't leave the token lying on the clipboard
+    await checkSession();
+    sp.ok('Logged in' + (state.email ? ' as ' + p.bold(state.email) : ''));
+    t.write('\n  ' + p.dim('You can close the browser tab. Logging out on the website ends this session too.') + '\n');
+    await sleep(1800);
+    return true;
+  }
+}
+
+async function loginScreen({ reason, method } = {}) {
+  if (!method || method === 'guide') return tokenGuide({ reason });
+  header(p.bold('Log in'));
+  if (reason) t.write('  ' + p.warn(reason) + '\n\n');
+  if (method === 'auto') {
     t.write('  ' + p.dim('Your password goes straight into DeepSeek\'s own sign-in page. It is never saved.') + '\n\n');
     method = await t.select([
       { label: 'Email and password', hint: 'type them here, the rest is automatic', value: 'password' },
@@ -419,7 +521,7 @@ ${indent(t.wordmark())}  ${p.dim('bridge  ·  v' + pkg.version)}
     deepseek                 open the app
     deepseek claude [args]   launch Claude Code on DeepSeek
     deepseek chat            chat in the terminal
-    deepseek login           log in (add --google, or --token <t>)
+    deepseek login           step-by-step login (or --token <t>)
     deepseek logout          forget the session on this PC
     deepseek status          show whether the session works
     deepseek serve           run only the API, with a live request log
@@ -449,7 +551,7 @@ async function main() {
       if (!a.ok) { console.error('  ' + p.bad('✗') + ' DeepSeek rejected that token'); return process.exit(1); }
       config.update({ token: tok }); console.log('  ' + p.ok('✓') + ' Logged in'); return process.exit(0);
     }
-    const ok = await loginScreen({ method: flag('--google') ? 'google' : undefined });
+    const ok = await loginScreen({ method: flag('--google') ? 'google' : flag('--browser') ? 'auto' : 'guide' });
     return quit(ok ? 0 : 1);
   }
 

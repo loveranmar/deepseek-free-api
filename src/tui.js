@@ -158,7 +158,8 @@ function select(items, { initial = 0, footer = true, esc = 'back' } = {}) {
 /**
  * Single-line input. Resolves to the string, or null on Esc / Ctrl+C.
  */
-function input({ label, mask = false, value = '', placeholder = '', prefix: custom } = {}) {
+// Resolves to the text on Enter, null on Esc / Ctrl+C, or undefined when `signal` aborts it from outside.
+function input({ label, mask = false, value = '', placeholder = '', prefix: custom, signal } = {}) {
   return new Promise((resolve) => {
     let v = value;
     const prefix = custom ?? `  ${paint.dim(pad(label, 10))} ${paint.brand('›')} `;
@@ -167,6 +168,7 @@ function input({ label, mask = false, value = '', placeholder = '', prefix: cust
       write('\r\x1b[2K' + prefix + (shown || paint.dim(placeholder)) + (shown ? '' : `\r\x1b[${width(prefix)}C`));
     };
     cursor.show(); draw();
+    if (signal) signal.addEventListener('abort', () => { done(); write('\r\x1b[2K'); resolve(undefined); }, { once: true });
     const done = keys((k, pasted) => {
       if (pasted) { v += k.replace(/[\r\n]+/g, ''); return draw(); }
       if (KEY.enter.includes(k)) { done(); write('\n'); resolve(v); }

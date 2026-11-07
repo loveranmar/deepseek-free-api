@@ -27,7 +27,18 @@ deepseek login           log in (--google, or --token <t>)
 deepseek status | logout | serve
 ```
 
-Logging in needs no copying. Pick **Email and password** and type them in the terminal: a browser window opens DeepSeek's real sign-in page, fills the form, picks up the session and closes. Pick **Continue with Google** to sign in with Google in that window. The window uses its own Chrome profile in `data/chrome/`, so later logins are usually instant. Only the session token is saved (in `data/config.json`), never the password. It needs Google Chrome (Chromium or Edge also work; set `DSB_BROWSER` to pick one). Brave is skipped on purpose: its Shields break DeepSeek's captcha.
+**Log in** walks you through it in four steps:
+
+1. chat.deepseek.com opens in your normal browser. Log in there as usual (captcha included).
+2. Press `F12` (`Cmd+Option+J` on macOS) and open the **Console** tab.
+3. Paste the line the app already put on your clipboard and press Enter:
+   `copy(JSON.parse(localStorage.userToken).value)`
+   If the browser blocks pasting, type `allow pasting`, press Enter, and paste again.
+4. That copies your session token. The app watches the clipboard, checks the token with DeepSeek and logs you in. You can also paste the token into the app yourself.
+
+Only the token is saved (in `data/config.json`), and it is wiped from the clipboard afterwards. Logging out on the website ends the session.
+
+`deepseek login --browser` still offers the automatic sign-in (a Chrome window that fills in your email and password, or Google), but DeepSeek usually answers that with a captcha.
 
 The terminal app serves the API on port 8788 by default (the next free port if that's taken), so it can run next to the dashboard version.
 
