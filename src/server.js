@@ -84,6 +84,7 @@ async function handleApi(req, res, url) {
     entry.status = e.status || 500;
     if (entry.status !== 404) stats.errors++;
     entry.error = e.message;
+    if (e.type === 'auth_expired' || e.type === 'auth_missing') authCache = { at: 0, value: null }; // dashboard shows it on next poll
     if (res.headersSent) { // mid-stream failure: signal in-band
       try {
         if (anth) res.write(`event: error\ndata: ${JSON.stringify(errorBody('anthropic', e))}\n\n`);

@@ -19,6 +19,19 @@ if ! health 2; then
   fi
 fi
 
+# Don't open Claude Code on a dead token: every request would just fail with a 401.
+if ! curl -s -m 20 "http://localhost:$PORT/admin/state?fresh=1" | node -e '
+  let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+    let j = {}; try { j = JSON.parse(s); } catch {}
+    if (j.connected) process.exit(0);
+    console.error(j.reason ? "DeepSeek account problem: " + j.reason : "No DeepSeek account connected.");
+    process.exit(1);
+  });'; then
+  echo "Connect it in the dashboard: http://localhost:$PORT" >&2
+  xdg-open "http://localhost:$PORT" >/dev/null 2>&1 || true
+  exit 1
+fi
+
 DSKEY="$(node -e 'console.log(require(process.argv[1]).apiKey)' "$ROOT/data/config.json")"
 
 unset NO_COLOR

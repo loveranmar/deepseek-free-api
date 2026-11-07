@@ -43,6 +43,9 @@ async function api(pathname, body, signal) {
   if (!r.ok || !json) throw new DeepSeekError(`DeepSeek HTTP ${r.status}: ${text.slice(0, 160)}`, 502);
   if (json.code !== 0 && json.code !== undefined) {
     const msg = json.msg || 'unknown error';
+    if (json.code === 40003 || /invalid.?token|authorization failed/i.test(msg)) {
+      throw new DeepSeekError(`DeepSeek rejected the token (logged out, expired, or revoked by DeepSeek). Reconnect in the dashboard: http://localhost:${config.get().port}`, 401, 'auth_expired');
+    }
     const auth = /token|login|auth/i.test(msg);
     throw new DeepSeekError(`DeepSeek: ${msg}`, auth ? 401 : 502, auth ? 'auth_expired' : 'upstream_error');
   }
