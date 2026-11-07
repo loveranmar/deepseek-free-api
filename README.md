@@ -7,8 +7,8 @@ Turns your logged-in **chat.deepseek.com** session into a local API that speaks 
 ## Run
 
 ```
-start.bat            # Windows
-node bin/deepseek-bridge.js     # anywhere
+start.bat                       # Windows
+node bin/deepseek-bridge.js     # anywhere (or `deepseek-bridge` once linked onto your PATH)
 ```
 
 The dashboard opens at <http://localhost:8787>. Follow the 3 steps to paste your token (one console line copies it), then copy the generated API key.
@@ -41,6 +41,15 @@ Protocol knowledge and PoW approach adapted from [ForgetMeAI/FreeDeepseekAPI](ht
 ## Launching Claude Code on DeepSeek (Windows)
 
 `bin\dsclaude.cmd` starts the bridge if needed, sets the environment (including a `/model` picker with the 4 DeepSeek models from `assets\claude-settings.json`) and runs `claude`. Add `bin` to your PATH to run `dsclaude` anywhere.
+
+## Launching Claude Code on DeepSeek (Linux / macOS)
+
+`bin/dsclaude` does the same: starts the bridge in the background if needed (log in `data/bridge.log`), sets the environment and execs `claude`. Link it onto your PATH:
+
+```sh
+ln -s "$PWD/bin/dsclaude" ~/.local/bin/dsclaude
+ln -s "$PWD/bin/deepseek-bridge.js" ~/.local/bin/deepseek-bridge
+```
 
 ## Debugging
 
