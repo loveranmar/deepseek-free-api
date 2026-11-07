@@ -2,7 +2,7 @@
 
 Use DeepSeek for free from your terminal. It logs in with your chat.deepseek.com account and gives you a local **OpenAI** and **Anthropic** compatible API, so Claude Code, scripts and other tools can run on DeepSeek.
 
-![deepseek](docs/terminal-splash.png)
+![deepseek](docs/terminal-menu.png)
 
 > Unofficial. It uses DeepSeek's private web API, which can change or block you at any time and probably breaks their terms. Personal use only.
 
@@ -16,8 +16,6 @@ cd deepseek-free-api
 npm link            # or: ln -s "$PWD/bin/deepseek.js" ~/.local/bin/deepseek
 deepseek
 ```
-
-![menu](docs/terminal-menu.png)
 
 ## Log in
 
